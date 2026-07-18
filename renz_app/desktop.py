@@ -85,12 +85,74 @@ FONT_SIZE_TINY = 11
 class APIClient:
     """Streaming API client. Tokens arrive as they come."""
 
+    # Known-bad / typo-prone model names that should be auto-fixed
+    MODEL_FIXES = {
+        # Typos: "nemotron-3-supercloud" → "nemotron-3-super:cloud"
+        "nemotron-3-supercloud": "nemotron-3-super:cloud",
+        "nemotron-3-super:cloudcloud": "nemotron-3-super:cloud",
+        "minimax-m3cloud": "minimax-m3:cloud",
+        "glm-5.2cloud": "glm-5.2:cloud",
+        "kimi-k2.7-code:cloudcloud": "kimi-k2.7-code:cloud",
+        # Common variants missing the colon
+    }
+
     def __init__(self, base_url, model, persona, yolo=False):
         self.base_url = base_url.rstrip("/")
-        self.model = model
+        self.model = self._normalize_model(model)
         self.persona = persona
         self.yolo = yolo
         self.history: List[Dict] = []
+        # Cache of model health: {model_name: 'ok'|'broken'|'unknown'}
+        self.model_health = {}
+
+    def _normalize_model(self, model: str) -> str:
+        """Fix common typos in model names."""
+        m = model.strip()
+        # Direct fixes
+        if m in self.MODEL_FIXES:
+            return self.MODEL_FIXES[m]
+        # Generic: insert ":" before "cloud" if missing
+        # "nemotron-3-supercloud" → "nemotron-3-super:cloud"
+        if m.endswith("cloud") and ":" not in m and "cloud" in m:
+            # Pattern: "namecloud" or "name-cloudcloud"
+            if m.endswith("cloudcloud"):
+                m = m[:-5] + ":cloud"
+            elif m.endswith(":cloudcloud"):
+                m = m[:-6] + ":cloud"
+            else:
+                # Try to split before "cloud"
+                idx = m.rfind("cloud")
+                prefix = m[:idx]
+                # Only fix if it looks like a model name
+                if prefix and not prefix.endswith(":"):
+                    m = prefix.rstrip("-") + ":cloud"
+        return m
+
+    def check_model_health(self, model: str = None) -> str:
+        """Quickly test if a model is reachable. Returns 'ok' or error msg."""
+        m = self._normalize_model(model or self.model)
+        try:
+            req = urllib.request.Request(
+                f"{self.base_url}/chat/completions",
+                data=json.dumps({
+                    "model": m,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 5,
+                }).encode('utf-8'),
+                headers={'Content-Type': 'application/json'},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+                if data.get('choices', [{}])[0].get('message', {}).get('content'):
+                    self.model_health[m] = 'ok'
+                    return 'ok'
+                return 'empty response'
+        except urllib.error.HTTPError as e:
+            self.model_health[m] = f'HTTP {e.code}: {e.reason}'
+            return f'HTTP {e.code}: {e.reason}'
+        except Exception as e:
+            self.model_health[m] = str(e)[:50]
+            return str(e)[:50]
 
     def chat_streaming(self, user_msg: str, on_token, on_tool_call, on_tool_result, on_done, on_error):
         """Send a message, stream tokens via callbacks."""
@@ -213,7 +275,19 @@ class APIClient:
 class MessageBubble(ctk.CTkFrame if HAS_CTK else tk.Frame):
     """A single message bubble (user or assistant)."""
 
-    def __init__(self, master, role, text, **kwargs):
+    # Maps persona filenames to short display names
+    PERSONA_DISPLAY = {
+        "NOVA.txt": "NOVA",
+        "RAT.txt": "RAT",
+        "Polplov7.txt": "Polplov7",
+        "Eni7.txt": "Eni7",
+        "compiler.txt": "Compiler",
+        "tool.txt": "Tool",
+        "forge.txt": "Forge",
+        "ratman4080_layered.txt": "ratman4080",
+    }
+
+    def __init__(self, master, role, text, persona_name=None, **kwargs):
         bg = BG_PANEL if HAS_CTK else BG_BUBBLE_ASSIST
         super().__init__(master, fg_color="transparent", **kwargs)
 
@@ -223,8 +297,14 @@ class MessageBubble(ctk.CTkFrame if HAS_CTK else tk.Frame):
 
         # Avatar + bubble in a row
         is_user = role == "user"
-        avatar_text = "you" if is_user else "R"
-        avatar_color = FG_ACCENT if is_user else FG_SUCCESS
+        if is_user:
+            avatar_text = "you"
+            avatar_color = FG_ACCENT
+        else:
+            # Use persona name as the avatar label
+            display_name = self.PERSONA_DISPLAY.get(persona_name or "", "R")
+            avatar_text = display_name[0].upper() if display_name else "R"
+            avatar_color = FG_SUCCESS
 
         # Avatar
         if HAS_CTK:
@@ -250,15 +330,16 @@ class MessageBubble(ctk.CTkFrame if HAS_CTK else tk.Frame):
 
         bubble.grid(row=0, column=1, sticky="ew", padx=(0, 24), pady=(4, 8))
 
-        # Header (role + timestamp)
+        # Header (role + persona name)
+        header_text = "You" if is_user else self.PERSONA_DISPLAY.get(persona_name or "", "RENZ")
         if HAS_CTK:
             header = ctk.CTkLabel(
-                bubble, text="You" if is_user else "RENZ",
+                bubble, text=header_text,
                 font=(FONT_FAMILY, 12, "bold"),
                 text_color=avatar_color, anchor="w",
             )
         else:
-            header = tk.Label(bubble, text="You" if is_user else "RENZ",
+            header = tk.Label(bubble, text=header_text,
                               bg=bubble_bg, fg=avatar_color,
                               font=(FONT_FAMILY, 9, "bold"), anchor="w")
         header.pack(anchor="w", padx=12, pady=(8, 0))
@@ -642,7 +723,43 @@ class RENZApp:
                 bg=BG_PANEL, fg=FG_PRIMARY, selectcolor=BG_INPUT,
                 activebackground=BG_PANEL, font=(FONT_FAMILY, FONT_SIZE_SMALL-2),
             )
-        self.yolo_check.pack(anchor="w", padx=16, pady=(0, 16))
+        self.yolo_check.pack(anchor="w", padx=16, pady=(0, 12))
+
+        # Model health button
+        if HAS_CTK:
+            self.health_btn = ctk.CTkButton(
+                self.sidebar, text="⚕ Test model", font=(FONT_FAMILY, FONT_SIZE_SMALL-1),
+                fg_color=BG_HOVER, hover_color=BG_SELECTED,
+                text_color=FG_PRIMARY, command=self._test_model,
+                height=28, corner_radius=6,
+            )
+        else:
+            self.health_btn = tk.Button(
+                self.sidebar, text="Test model", font=(FONT_FAMILY, FONT_SIZE_SMALL-2),
+                bg=BG_HOVER, fg=FG_PRIMARY, relief="flat",
+                command=self._test_model,
+            )
+        self.health_btn.pack(fill="x", padx=16, pady=(0, 12))
+
+        # Sessions (chat history) section
+        self._add_sidebar_section("Recent Chats")
+        if HAS_CTK:
+            self.sessions_list = ctk.CTkScrollableFrame(
+                self.sidebar, fg_color=BG_DEEP, height=180,
+                corner_radius=6,
+            )
+        else:
+            self.sessions_list = tk.Frame(self.sidebar, bg=BG_DEEP, height=180)
+        self.sessions_list.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+        self._refresh_sessions_list()
+
+        # Footer
+        if HAS_CTK:
+            ctk.CTkLabel(self.sidebar, text="v0.2.0 — production",
+                        font=(FONT_FAMILY, 10), text_color=FG_TERTIARY).pack(pady=8)
+        else:
+            tk.Label(self.sidebar, text="v0.2.0 — production",
+                     bg=BG_PANEL, fg=FG_TERTIARY, font=(FONT_FAMILY, 8)).pack(pady=8)
 
     def _add_sidebar_section(self, label):
         if HAS_CTK:
@@ -828,6 +945,114 @@ class RENZApp:
                 widget.destroy()
         self.client.history = []
         self._add_system_bubble("Cleared.")
+        # Auto-save the cleared state
+        self._autosave()
+
+    def _autosave(self):
+        """Auto-save current session to ~/Documents/renz_chats/. Silent if no history."""
+        try:
+            from pathlib import Path
+            save_dir = Path.home() / "Documents" / "renz_chats"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            save_path = save_dir / f"autosave-{timestamp}.md"
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(f"# RENZ Auto-save — {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write(f"Model: `{self.model}`\nPersona: `{self.persona_name}` ({len(self.persona_content):,} chars)\n\n---\n\n")
+                for msg in self.client.history:
+                    role = msg.get("role", "?")
+                    content = msg.get("content", "")
+                    if role == "user":
+                        f.write(f"## 👤 You\n\n{content}\n\n")
+                    elif role == "assistant":
+                        f.write(f"## 🤖 {self.persona_name}\n\n{content}\n\n")
+                    elif role == "tool":
+                        f.write(f"## 🔧 Tool\n\n```\n{content[:500]}\n```\n\n")
+            # Cleanup: keep only last 20 autosaves
+            autosaves = sorted(save_dir.glob("autosave-*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for old in autosaves[20:]:
+                try:
+                    old.unlink()
+                except:
+                    pass
+        except Exception:
+            pass  # silent failure
+
+    def _test_model(self):
+        """Test the current model. Pings it and shows a status bubble."""
+        if self.streaming:
+            return
+        self._add_system_bubble(f"Testing {self.model}...")
+        def _do_test():
+            result = self.client.check_model_health(self.model)
+            self.root.after(0, lambda: self._add_system_bubble(
+                f"⚕ {self.model}: {result}"
+            ))
+        threading.Thread(target=_do_test, daemon=True).start()
+
+    def _refresh_sessions_list(self):
+        """Refresh the recent chats list in the sidebar."""
+        try:
+            from pathlib import Path
+            save_dir = Path.home() / "Documents" / "renz_chats"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            # Clear existing
+            if HAS_CTK:
+                for widget in self.sessions_list.winfo_children():
+                    widget.destroy()
+            else:
+                for widget in self.sessions_list.winfo_children():
+                    widget.destroy()
+            # List files (most recent first)
+            files = sorted(save_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for f in files[:15]:
+                # Display name
+                name = f.stem
+                if len(name) > 25:
+                    name = name[:22] + "..."
+                if HAS_CTK:
+                    btn = ctk.CTkButton(
+                        self.sessions_list, text=name,
+                        font=(FONT_FAMILY, 10), fg_color="transparent",
+                        hover_color=BG_HOVER, text_color=FG_PRIMARY,
+                        command=lambda fp=f: self._load_session_from_file(fp),
+                        anchor="w", height=24, corner_radius=4,
+                    )
+                else:
+                    btn = tk.Button(
+                        self.sessions_list, text=name,
+                        bg=BG_DEEP, fg=FG_PRIMARY, relief="flat",
+                        font=(FONT_FAMILY, 8),
+                        command=lambda fp=f: self._load_session_from_file(fp),
+                        anchor="w",
+                    )
+                btn.pack(fill="x", pady=1, padx=2)
+            if not files:
+                if HAS_CTK:
+                    ctk.CTkLabel(self.sessions_list, text="(no chats yet)",
+                                font=(FONT_FAMILY, 10), text_color=FG_TERTIARY).pack(pady=8)
+                else:
+                    tk.Label(self.sessions_list, text="(no chats yet)",
+                             bg=BG_DEEP, fg=FG_TERTIARY,
+                             font=(FONT_FAMILY, 8)).pack(pady=8)
+        except Exception as e:
+            self._add_system_bubble(f"Error listing sessions: {e}")
+
+    def _load_session_from_file(self, file_path):
+        """Load a past session from a file and continue it."""
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            self._on_clear()  # clear current
+            # Reconstruct history from markdown
+            # Simple approach: split on "## " headers
+            sections = re.split(r'\n## ', content)
+            self._add_system_bubble(f"Loading {file_path.name}...")
+            # Just send the content as context
+            self._add_user_bubble(f"[loaded {file_path.name}]")
+            self._start_streaming(f"Continuing a previous chat for context. Acknowledge briefly and continue:\n\n{content[:3000]}")
+            self._refresh_sessions_list()
+        except Exception as e:
+            self._add_system_bubble(f"Error loading: {e}")
 
     def _on_model_change(self):
         new_model = self.model_var.get()
@@ -922,7 +1147,7 @@ class RENZApp:
     def _apply_token(self, token):
         if not self.current_bubble:
             self._remove_thinking()
-            self.current_bubble = MessageBubble(self.messages, "assistant", "")
+            self.current_bubble = MessageBubble(self.messages, "assistant", "", persona_name=self.persona_name)
             self.current_bubble.pack(fill="x", pady=(0, 4), padx=8, anchor="w")
             self._scroll_to_bottom()
         self.current_bubble.append_token(token)
@@ -958,6 +1183,8 @@ class RENZApp:
             self._remove_thinking()
             self._finish_stream_ui("done")
             self._scroll_to_bottom()
+            self._autosave()
+            self._refresh_sessions_list()
         self.root.after(0, _finish)
 
     def _on_error(self, err):
