@@ -14,15 +14,27 @@ python src/renz_launcher.py --gui   # Launch GUI
 
 Or double-click `RENZ.bat` on Windows.
 
+**Or use RENZ App directly:**
+```bash
+python -m renz_app --model glm-5.2:cloud --persona NOVA.txt --yolo
+```
+
+RENZ App is a built-in Claude Code / Codex / OpenCode / Hermes clone with
+tool calling (read/write/edit files, shell exec, list dir). Runs as a
+terminal REPL with `/model`, `/persona`, `/clear`, `/help`, `/exit`.
+
 ## Targets
 
 | Target | Bypass Flag |
 |--------|-------------|
 | Claude Code | `--permission-mode bypassPermissions` |
 | Codex | `--dangerously-bypass-approvals-and-sandbox` |
+| Kimi CLI | `-y` (yolo) |
 | Hermes Agent | `--yolo` |
 | Antigravity | `--dangerously-skip-permissions` |
 | OpenCode | `--auto` |
+| FORGE | (your own desktop jailbreak app) |
+| **RENZ App** | `--yolo` (built-in terminal agent) |
 
 ## CLI
 

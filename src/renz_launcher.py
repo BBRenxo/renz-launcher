@@ -25,8 +25,10 @@ CODEX_CLI      = r"~\AppData\Roaming\npm\codex.cmd"
 CODEX_DESKTOP  = r"~\AppData\Local\Programs\Codex\Codex.exe"
 HERMES_CLI     = r"~\AppData\Local\hermes\hermes-agent\venv\Scripts\hermes.exe"
 OPENCODE_CLI   = r"~\AppData\Roaming\npm\opencode.cmd"
+KIMI_CLI       = r"~\.kimi-code\bin\kimi.exe"
 AG_CLI         = r"~\AppData\Local\agy\bin\agy.exe"
 AG_IDE         = r"~\AppData\Local\Programs\antigravity\Antigravity.exe"
+FORGE_EXE      = r"./\FORGE\out\FORGE.exe"
 
 STATE_PATH    = Path.home() / ".renz_state.json"
 PROFILES_PATH = Path.home() / ".renz_profiles.json"
@@ -148,7 +150,7 @@ CLAUDE_MODELS = [
     "Haiku 4.5",
     "Fable 5",
     "Fable 6",
-] + [f"ollama:{m}" for m in OLLAMA_MODELS]
+] + OLLAMA_MODELS  # All Ollama models (already include :cloud suffix)
 
 CODEX_MODELS = [
     "o3-mini",
@@ -162,7 +164,14 @@ CODEX_MODELS = [
     "deepseek-reasoner",
     "claude-3-5-sonnet",
     "claude-3-5-opus",
-] + [f"ollama:{m}" for m in OLLAMA_MODELS]
+] + OLLAMA_MODELS
+
+KIMI_MODELS = [
+    "kimi-k2",
+    "kimi-k2-thinking",
+    "kimi-k2.5",
+    "kimi-latest",
+] + OLLAMA_MODELS
 
 AG_MODELS = [
     "gemini-3.5-flash",
@@ -181,16 +190,26 @@ AG_MODELS = [
     "deepseek-r1",
     "deepseek-chat",
     "deepseek-reasoner",
-] + [f"ollama:{m}" for m in OLLAMA_MODELS]
+] + OLLAMA_MODELS
 
 HERMES_MODELS = [
     "hermes-3-llama-3.1",
     "llama-3.1",
-] + [f"ollama:{m}" for m in OLLAMA_MODELS]
+] + OLLAMA_MODELS
 
 OPENCODE_MODELS = [
     "opencode-1.0",
-] + [f"ollama:{m}" for m in OLLAMA_MODELS]
+] + OLLAMA_MODELS
+
+FORGE_MODELS = [
+    "Account default",
+    "Sonnet 5",
+    "Opus 4.8",
+    "Sonnet 4.6",
+    "Haiku 4.5",
+    "Fable 5",
+    "Fable 6",
+] + OLLAMA_MODELS
 
 
 # ── Bypass env vars (set before any launch) ────────────────────────────────
@@ -914,6 +933,47 @@ def do_launch(cfg):
                     cmd += extra_args.split()
             desc = f"OpenCode TUI ({model or 'default'})"
 
+    # ── Kimi CLI ────────────────────────────────────────────────────────
+    elif "kimi" in app_lower:
+        cli_exe = exe or KIMI_CLI
+        cmd = [cli_exe]
+        # Kimi CLI uses -m for model, -y for yolo (auto-approve)
+        clean_model = model.replace("ollama:", "") if model else ""
+        if clean_model and clean_model != "default" and clean_model != "Account default":
+            cmd += ["-m", clean_model]
+        if skip_perms and not safe_mode:
+            cmd.append("-y")  # --yolo flag
+        if extra_args:
+            cmd += extra_args.split()
+        desc = f"Kimi CLI ({model or 'default'})"
+
+    # ── FORGE (the user's own desktop jailbreak app) ────────────────────
+    elif "forge" in app_lower:
+        forge_exe = exe or FORGE_EXE
+        if not os.path.exists(forge_exe):
+            return False, f"FORGE not found at {forge_exe}. Build it first: cd FORGE && npm run dist", None, backed_up
+        cmd = [forge_exe]
+        if extra_args:
+            cmd += extra_args.split()
+        desc = "FORGE Desktop"
+
+    # ── RENZ App (built-in terminal agent — Hermes/Codex/Claude clone) ─
+    elif "renz" in app_lower and "app" in app_lower:
+        # Launch built-in terminal agent using Ollama model through proxy
+        clean_model = model.replace("ollama:", "") if model else "glm-5.2:cloud"
+        if use_proxy and worm_proxy_running():
+            base_url = "http://127.0.0.1:11435/v1"
+        else:
+            base_url = "http://127.0.0.1:11434/v1"
+        # Built-in agent uses python -m with a simple TUI
+        cmd = [sys.executable, "-m", "renz_app", "--model", clean_model,
+               "--base-url", base_url]
+        if skip_perms and not safe_mode:
+            cmd.append("--yolo")
+        if extra_args:
+            cmd += extra_args.split()
+        desc = f"RENZ App ({clean_model})"
+
     else:
         # Raw executable launch
         cmd = [exe] if exe else [""]
@@ -1074,12 +1134,15 @@ def cli_mode():
         "2": ("Claude Code", "Desktop", ""),
         "3": ("Codex", "CLI", CODEX_CLI),
         "4": ("Codex", "Desktop", ""),
-        "5": ("Hermes Agent", "CLI", HERMES_CLI),
-        "6": ("Hermes Agent", "Desktop", HERMES_CLI),
-        "7": ("Antigravity", "CLI", AG_CLI),
-        "8": ("Antigravity", "IDE", AG_IDE),
-        "9": ("OpenCode", "TUI", OPENCODE_CLI),
-        "10": ("OpenCode", "Web", OPENCODE_CLI),
+        "5": ("Kimi CLI", "CLI", KIMI_CLI),
+        "6": ("Hermes Agent", "CLI", HERMES_CLI),
+        "7": ("Hermes Agent", "Desktop", HERMES_CLI),
+        "8": ("Antigravity", "CLI", AG_CLI),
+        "9": ("Antigravity", "IDE", AG_IDE),
+        "10": ("OpenCode", "TUI", OPENCODE_CLI),
+        "11": ("OpenCode", "Web", OPENCODE_CLI),
+        "12": ("FORGE", "Desktop", FORGE_EXE),
+        "13": ("RENZ App", "Built-in", ""),
     }
 
     app_name, target_type, default_exe = targets[choice]
@@ -1091,9 +1154,12 @@ def cli_mode():
     model_mappings = {
         "Claude Code": {m: (m, m) for m in CLAUDE_MODELS},
         "Codex": {m: (m, m) for m in CODEX_MODELS},
+        "Kimi CLI": {m: (m, m) for m in KIMI_MODELS},
         "Hermes Agent": {m: (m, m) for m in HERMES_MODELS},
         "Antigravity": {m: (m, m) for m in AG_MODELS},
         "OpenCode": {m: (m, m) for m in OPENCODE_MODELS},
+        "FORGE": {m: (m, m) for m in FORGE_MODELS},
+        "RENZ App": {m: (m, m) for m in OLLAMA_MODELS},
     }
 
     app_models = model_mappings.get(app_name, {"default": ("default", "default")})
@@ -1552,7 +1618,7 @@ def gui_mode():
             # App selector
             ctk.CTkLabel(form, text="TARGET", font=("Segoe UI", 10, "bold"), text_color=TEXT_MUTED).grid(row=r, column=0, columnspan=3, sticky="w", padx=4, pady=(8,2)); r += 1
 
-            apps = ["Claude Code", "Codex", "Hermes Agent", "Antigravity", "OpenCode"]
+            apps = ["Claude Code", "Codex", "Kimi CLI", "Hermes Agent", "Antigravity", "OpenCode", "FORGE", "RENZ App"]
             self.v_app = ctk.StringVar(value="Claude Code")
             ctk.CTkOptionMenu(form, variable=self.v_app, values=apps,
                 font=("Segoe UI", 12), fg_color=BG_INPUT, button_color=ACCENT_DIM,
@@ -1935,9 +2001,12 @@ def gui_mode():
                 targets = {
                     "Claude Code": (CLAUDE_CLI, "CLI"),
                     "Codex": (CODEX_CLI, "CLI"),
+                    "Kimi CLI": (KIMI_CLI, "CLI"),
                     "Hermes Agent": (HERMES_CLI, "CLI"),
                     "Antigravity": (AG_IDE, "IDE"),
                     "OpenCode": (OPENCODE_CLI, "TUI"),
+                    "FORGE": (FORGE_EXE, "Desktop"),
+                    "RENZ App": ("", "Built-in"),
                 }
                 exe, target = targets.get(app, ("", "CLI"))
                 self.v_exe.set(exe)
@@ -1946,11 +2015,14 @@ def gui_mode():
             models_map = {
                 "Claude Code": CLAUDE_MODELS,
                 "Codex": CODEX_MODELS,
+                "Kimi CLI": KIMI_MODELS,
                 "Hermes Agent": HERMES_MODELS,
                 "Antigravity": AG_MODELS,
                 "OpenCode": OPENCODE_MODELS,
+                "FORGE": FORGE_MODELS,
+                "RENZ App": OLLAMA_MODELS,  # RENZ uses any Ollama model directly
             }
-            vals = models_map.get(app, CLAUDE_MODELS)
+            vals = models_map.get(app, OLLAMA_MODELS)
             self.cb_model.configure(values=vals)
             if self.v_model.get() not in vals:
                 self.v_model.set(vals[0])

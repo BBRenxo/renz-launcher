@@ -70,6 +70,15 @@ def copy_assets():
             shutil.copy2(persona_file, DST / "personas" / persona_file.name)
             print(f"  [+] personas/{persona_file.name}")
 
+    # Copy renz_app package
+    renz_app_src = SRC / "renz_app"
+    if renz_app_src.exists():
+        renz_app_dst = DST / "renz_app"
+        renz_app_dst.mkdir(parents=True, exist_ok=True)
+        for f in renz_app_src.glob("*.py"):
+            shutil.copy2(f, renz_app_dst / f.name)
+            print(f"  [+] renz_app/{f.name}")
+
     sample = DST / "personas" / "custom_example.txt"
     sample.write_text("# Your Custom Persona\nReplace with your own system prompt.\n", encoding='utf-8')
     print("  [+] custom_example.txt")
@@ -98,15 +107,27 @@ python src/renz_launcher.py --gui   # Launch GUI
 
 Or double-click `RENZ.bat` on Windows.
 
+**Or use RENZ App directly:**
+```bash
+python -m renz_app --model glm-5.2:cloud --persona NOVA.txt --yolo
+```
+
+RENZ App is a built-in Claude Code / Codex / OpenCode / Hermes clone with
+tool calling (read/write/edit files, shell exec, list dir). Runs as a
+terminal REPL with `/model`, `/persona`, `/clear`, `/help`, `/exit`.
+
 ## Targets
 
 | Target | Bypass Flag |
 |--------|-------------|
 | Claude Code | `--permission-mode bypassPermissions` |
 | Codex | `--dangerously-bypass-approvals-and-sandbox` |
+| Kimi CLI | `-y` (yolo) |
 | Hermes Agent | `--yolo` |
 | Antigravity | `--dangerously-skip-permissions` |
 | OpenCode | `--auto` |
+| FORGE | (your own desktop jailbreak app) |
+| **RENZ App** | `--yolo` (built-in terminal agent) |
 
 ## CLI
 
