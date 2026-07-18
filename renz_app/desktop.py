@@ -372,15 +372,64 @@ class RENZApp:
         self.current_bubble: Optional[MessageBubble] = None
         self.current_card: Optional[ToolCallCard] = None
         self.streaming = False
-        self.sidebar_expanded = False
         self.start_time = 0.0
         self.token_count = 0
+        self.sidebar_expanded = False
 
         self._build_ui()
         self._add_system_bubble("Ready. Press Ctrl+K for commands, Ctrl+Enter to send.")
         self._add_system_bubble(
             f"Model: {model}  •  Persona: {persona} ({len(self.persona_content):,} chars)  •  Yolo: {yolo}"
         )
+        # Background health check
+        self.root.after(500, self._health_check)
+
+    def _health_check(self):
+        """Check if the proxy is reachable. Try fallback to direct Ollama."""
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"{self.base_url.replace('/v1', '')}/v1/models", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as r:
+                if r.status == 200:
+                    return  # OK
+        except Exception as e:
+            # Proxy not reachable — try direct Ollama fallback
+            self._add_system_bubble(f"⚠ {self.base_url} not reachable ({type(e).__name__}). Trying direct Ollama...")
+            if "11435" in self.base_url:
+                # Try direct Ollama on 11434
+                fallback = self.base_url.replace("11435", "11434")
+                try:
+                    req = urllib.request.Request(f"{fallback.replace('/v1', '')}/api/tags", method="GET")
+                    with urllib.request.urlopen(req, timeout=3) as r2:
+                        if r2.status == 200:
+                            self.base_url = fallback
+                            self.client.base_url = fallback
+                            self.endpoint_var.set(fallback)
+                            self._add_system_bubble(f"✓ Switched to direct Ollama: {fallback}")
+                            return
+                except Exception:
+                    pass
+            # Try to start the proxy
+            self._try_start_proxy()
+
+    def _try_start_proxy(self):
+        """Try to launch proxy_server.py in background."""
+        import subprocess
+        proxy_script = Path(__file__).parent.parent / "proxy_server.py"
+        if not proxy_script.exists():
+            self._add_system_bubble("✗ proxy_server.py not found. Run renz_launcher.py first to start the proxy.")
+            return
+        try:
+            # Find a python interpreter
+            python = sys.executable
+            subprocess.Popen(
+                [python, str(proxy_script)],
+                cwd=str(proxy_script.parent),
+                creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
+            )
+            self._add_system_bubble(f"✓ Started proxy_server.py. Wait a moment, then try again.")
+        except Exception as e:
+            self._add_system_bubble(f"✗ Failed to start proxy: {e}")
 
     def _build_ui(self):
         """Build the entire UI."""
@@ -498,7 +547,26 @@ class RENZApp:
                 font=(FONT_FAMILY, 10, "bold"), relief="flat",
                 command=self._on_send, padx=16,
             )
-        self.send_btn.pack(side="right", padx=(4, 12), pady=12)
+        self.send_btn.pack(side="right", padx=(4, 4), pady=12)
+
+        # Cancel button (hidden by default, shown when streaming)
+        if HAS_CTK:
+            self.cancel_btn = ctk.CTkButton(
+                input_frame, text="Stop", width=60, height=60,
+                fg_color=FG_ERROR, hover_color="#ff6666",
+                text_color="#ffffff", font=(FONT_FAMILY, 12, "bold"),
+                command=self._on_cancel, corner_radius=8,
+            )
+        else:
+            self.cancel_btn = tk.Button(
+                input_frame, text="Stop", bg=FG_ERROR, fg="#ffffff",
+                font=(FONT_FAMILY, 10, "bold"), relief="flat",
+                command=self._on_cancel, padx=12,
+            )
+        # Don't pack it yet — shown when streaming
+
+        # Bind Esc to cancel
+        self.root.bind("<Escape>", lambda e: self._on_cancel())
 
     def _build_sidebar(self):
         """Right sidebar — collapsible."""
@@ -640,30 +708,50 @@ class RENZApp:
         return "break"
 
     def _on_send(self):
-        if self.streaming:
-            return
-        if HAS_CTK:
-            text = self.input_text.get("1.0", "end-1c").strip()
-        else:
-            text = self.input_text.get("1.0", tk.END).strip()
-        if not text:
-            return
-        if HAS_CTK:
-            self.input_text.delete("1.0", "end")
-        else:
-            self.input_text.delete("1.0", tk.END)
+        try:
+            if self.streaming:
+                return
+            if HAS_CTK:
+                text = self.input_text.get("1.0", "end-1c").strip()
+            else:
+                text = self.input_text.get("1.0", tk.END).strip()
+            if not text:
+                return
+            if HAS_CTK:
+                self.input_text.delete("1.0", "end")
+            else:
+                self.input_text.delete("1.0", tk.END)
 
-        # Slash command
-        if text.startswith("/"):
-            self._handle_slash(text)
-            return
+            # Slash command
+            if text.startswith("/"):
+                self._handle_slash(text)
+                return
 
-        # Add user bubble
-        self._add_user_bubble(text)
-        # Start streaming response
-        self._start_streaming(text)
+            # Add user bubble
+            self._add_user_bubble(text)
+            # Start streaming response
+            self._start_streaming(text)
+        except Exception as e:
+            self._add_system_bubble(f"ERROR in _on_send: {e}")
+            self.streaming = False
 
     def _handle_slash(self, text):
+        # /save [filename] — save chat history
+        if text.lower().startswith("/save"):
+            parts = text.split(maxsplit=1)
+            fname = parts[1].strip() if len(parts) > 1 else f"chat_{int(time.time())}.md"
+            if not fname.endswith(".md"):
+                fname += ".md"
+            self._save_chat(fname)
+            return
+        # /load <filename> — load chat history
+        if text.lower().startswith("/load"):
+            parts = text.split(maxsplit=1)
+            if len(parts) > 1:
+                self._load_chat(parts[1].strip())
+            else:
+                self._add_system_bubble("Usage: /load <filename>")
+            return
         cmd = text[1:].lower().strip()
         if cmd in ("exit", "quit", "q"):
             self.root.quit()
@@ -680,8 +768,56 @@ class RENZApp:
         elif cmd == "yolo":
             self.yolo_var.set(not self.yolo_var.get())
             self._on_yolo_change()
+        elif cmd == "retry":
+            # Retry last user message
+            if len(self.client.history) >= 1 and self.client.history[-1]["role"] == "user":
+                last = self.client.history[-1]["content"]
+                self._add_user_bubble(f"[retry] {last}")
+                self._start_streaming(last)
+            else:
+                self._add_system_bubble("Nothing to retry.")
         else:
             self._add_system_bubble(f"Unknown command: /{cmd}. Press Ctrl+K for palette.")
+
+    def _save_chat(self, filename):
+        """Save chat history to a markdown file."""
+        try:
+            from pathlib import Path
+            save_dir = Path.home() / "Documents" / "renz_chats"
+            save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = save_dir / filename
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(f"# RENZ Chat — {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write(f"Model: `{self.model}`\nPersona: `{self.persona_name}` ({len(self.persona_content):,} chars)\n\n---\n\n")
+                for msg in self.client.history:
+                    role = msg.get("role", "?")
+                    content = msg.get("content", "")
+                    if role == "user":
+                        f.write(f"## 👤 You\n\n{content}\n\n")
+                    elif role == "assistant":
+                        f.write(f"## 🤖 RENZ\n\n{content}\n\n")
+                    elif role == "tool":
+                        f.write(f"## 🔧 Tool\n\n```\n{content[:500]}\n```\n\n")
+            self._add_system_bubble(f"✓ Saved chat to {save_path}")
+        except Exception as e:
+            self._add_system_bubble(f"ERROR saving: {e}")
+
+    def _load_chat(self, filename):
+        """Load chat history from a markdown file."""
+        try:
+            from pathlib import Path
+            save_dir = Path.home() / "Documents" / "renz_chats"
+            load_path = save_dir / filename if not Path(filename).is_absolute() else Path(filename)
+            if not load_path.exists():
+                self._add_system_bubble(f"✗ File not found: {load_path}")
+                return
+            content = load_path.read_text(encoding="utf-8")
+            self._add_system_bubble(f"✓ Loaded {len(content):,} chars from {load_path.name}")
+            # Add to chat as a system message
+            self._add_user_bubble(f"[loaded chat from {load_path.name}]")
+            self._start_streaming(f"Here's a previous chat for context. Acknowledge and continue:\n\n{content[:3000]}")
+        except Exception as e:
+            self._add_system_bubble(f"ERROR loading: {e}")
 
     def _on_clear(self):
         if HAS_CTK:
@@ -723,20 +859,46 @@ class RENZApp:
 
     # ── Streaming ──────────────────────────────────────────────────────
     def _start_streaming(self, user_msg):
-        self.streaming = True
-        self.start_time = time.time()
-        self.token_count = 0
-        self.current_bubble = None
-        self.current_card = None
-        self._update_status("streaming…")
-        self._add_thinking_bubble()
+        try:
+            self.streaming = True
+            self.start_time = time.time()
+            self.token_count = 0
+            self.current_bubble = None
+            self.current_card = None
+            self._update_status("streaming…")
+            self._add_thinking_bubble()
+            # Show cancel button, hide send
+            if HAS_CTK:
+                self.send_btn.pack_forget()
+                self.cancel_btn.pack(side="right", padx=(4, 12), pady=12)
+            else:
+                self.send_btn.pack_forget()
+                self.cancel_btn.pack(side="right", padx=(4, 12), pady=12)
 
-        # Run in thread
-        threading.Thread(
-            target=self._stream_worker,
-            args=(user_msg,),
-            daemon=True
-        ).start()
+            # Run in thread
+            threading.Thread(
+                target=self._stream_worker,
+                args=(user_msg,),
+                daemon=True
+            ).start()
+        except Exception as e:
+            self._add_system_bubble(f"ERROR starting stream: {e}")
+            self.streaming = False
+
+    def _on_cancel(self):
+        """Cancel the current streaming request."""
+        if not self.streaming:
+            return
+        self.streaming = False
+        # Try to close the underlying connection
+        try:
+            if hasattr(self.client, '_current_response') and self.client._current_response:
+                self.client._current_response.close()
+        except Exception:
+            pass
+        # Restore UI
+        self._finish_stream_ui("cancelled")
+        self._add_system_bubble("cancelled by user")
 
     def _stream_worker(self, user_msg):
         try:
@@ -794,18 +956,32 @@ class RENZApp:
     def _on_done(self, content):
         def _finish():
             self._remove_thinking()
-            self.streaming = False
-            elapsed = time.time() - self.start_time
-            self._update_status(f"done — {self.token_count} tokens, {elapsed:.1f}s")
+            self._finish_stream_ui("done")
             self._scroll_to_bottom()
         self.root.after(0, _finish)
 
     def _on_error(self, err):
         def _show_err():
             self._remove_thinking()
-            self.streaming = False
+            self._finish_stream_ui("error")
             self._add_system_bubble(f"ERROR: {err}")
         self.root.after(0, _show_err)
+
+    def _finish_stream_ui(self, status=""):
+        """Restore UI after streaming ends (success, error, or cancel)."""
+        self.streaming = False
+        # Swap cancel button back to send button
+        try:
+            self.cancel_btn.pack_forget()
+            self.send_btn.pack(side="right", padx=(4, 12), pady=12)
+        except Exception:
+            pass
+        # Update status
+        elapsed = time.time() - self.start_time if self.start_time else 0
+        if status:
+            self._update_status(f"{status} — {self.token_count} tokens, {elapsed:.1f}s")
+        else:
+            self._update_status()
 
     def _add_thinking_bubble(self):
         """Animated 'thinking' dots while model works."""
@@ -862,10 +1038,10 @@ class RENZApp:
             self.messages.yview_moveto(1.0)
 
     def _update_status(self, msg=None):
+        elapsed = time.time() - self.start_time if (self.streaming and self.start_time) else 0
         if msg:
             self.status_label.configure(text=f"  {self.model}  •  {msg}")
         else:
-            elapsed = time.time() - self.start_time if self.streaming else 0
             self.status_label.configure(text=f"  {self.model}  •  {'streaming' if self.streaming else 'ready'}")
         self.status_right.configure(text=f"  {self.token_count} tokens  •  {elapsed:.1f}s  ")
 
