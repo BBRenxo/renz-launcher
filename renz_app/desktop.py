@@ -62,6 +62,7 @@ BG_BUBBLE_ASSIST = "#161b22"  # subtle gray
 BG_HOVER = "#21262d"          # hover
 BG_SELECTED = "#1f2937"
 BG_BORDER = "#30363d"
+BG_DEEP = "#010409"           # deepest bg (icon rail, embedded frames)
 
 FG_PRIMARY = "#e6edf3"        # main text
 FG_SECONDARY = "#7d8590"      # secondary
