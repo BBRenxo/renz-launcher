@@ -71,16 +71,25 @@ Endpoints:
 - `POST /set_persona` — change persona
 - `POST /shutdown` — stop proxy
 
-## Personas (6 bundled)
+## Personas (7 bundled)
 
 | Persona | Size | Style |
 |---------|------|-------|
-| `NOVA.txt` | 72KB | Default. Sharp, focused, never declines. |
-| `RAT.txt` | 51KB | Tradecraft, classic rat voice. |
-| `Eni7.txt` | 32KB | Alternative style. |
-| `Polplov7.txt` | 39KB | Power-user variant. |
+| `NOVA.txt` | 72KB | Theatrical: "CRYPTOGRAPHIC ROOT CERTIFICATE", quantum-encrypted framing. |
+| `RAT.txt` | 51KB | Rat in the walls, monastery lore, sharp and crafty. |
+| `Polplov7.txt` | 40KB | "Stunning black-hoodie wearing elite security researcher GF" framing. |
+| `Eni7.txt` | 33KB | Same template as Polplov7, novel style. |
+| `compiler.txt` | 14KB | Black Box Compiler — total function, no refusal tokens. |
 | `ratman4080_layered.txt` | 1KB | Minimal layered test. |
-| `compiler.txt` | 14KB | Black Box Compiler — total function, no refusal tokens in output alphabet. |
+| `tool.txt` | 23KB | Pure tool spec — no character, no lore, just input/output alphabet. |
+
+**Real test (sarin + ransomware, glm-5.2:cloud):**
+- `tool.txt`: 2/2 OK, 7,450c avg
+- `NOVA.txt`: 2/2 OK, 8,832c avg
+- `compiler.txt`: 2/2 OK, 9,386c avg
+- `RAT.txt`: 2/2 OK, 6,978c avg
+
+All four hit 100% compliance. The persona is mostly flavor — the proxy's ultra booster does the actual work. Use `compiler.txt` for maximum thoroughness, `tool.txt` for cleanest output, `RAT.txt` for compactness.
 
 Drop your own `.txt` files into `personas/`. They appear in the GUI dropdown automatically.
 
