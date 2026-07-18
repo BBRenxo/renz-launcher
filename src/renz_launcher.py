@@ -210,11 +210,12 @@ CODEX_MODELS = [
 ] + OLLAMA_MODELS
 
 KIMI_MODELS = [
-    "kimi-k2",
-    "kimi-k2-thinking",
-    "kimi-k2.5",
-    "kimi-latest",
-] + OLLAMA_MODELS
+    "kimi-code/k3",                          # default per Kimi config.toml
+    "kimi-code/kimi-for-coding",             # K2.7 Coding
+    "kimi-code/kimi-for-coding-highspeed",   # fast variant
+    "kimi-k2.7-code:cloud",                  # cloud fallback (via WORM proxy)
+    "kimi-k2.6:cloud",
+]
 
 AG_MODELS = [
     "gemini-3.5-flash",
