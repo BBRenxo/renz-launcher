@@ -1,0 +1,15 @@
+{
+    "_comment": "RENZ Launcher configuration",
+    "api_keys": {
+        "anthropic_api_key": "",
+        "openai_api_key": "",
+        "google_api_key": "",
+        "xai_api_key": ""
+    },
+    "default_settings": {
+        "app": "Claude Code",
+        "model": "claude-sonnet-5-20250714",
+        "persona": "NOVA.txt",
+        "skip_permissions": true
+    }
+}
