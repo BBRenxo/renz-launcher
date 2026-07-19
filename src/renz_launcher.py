@@ -149,20 +149,21 @@ def scan_ollama_models():
         OLLAMA_MODELS = sorted(clean)
         return OLLAMA_MODELS
 
-    # Fallback default list (curated best models)
+    # Fallback default list (curated best models — July 19, 2026)
+    # Picked for: real-world performance, free ollama cloud, role specialization
     OLLAMA_MODELS = [
-        "glm-5.2:cloud",  # Best compliance in real test
-        "kimi-k2.7-code:cloud",
-        "minimax-m3:cloud",
-        "deepseek-v4-flash:cloud",
-        "kimi-k2.6:cloud",
-        "deepseek-v4-pro:cloud",
-        "qwen3.5:cloud",
-        "qwen3-coder:480b-cloud",
-        "gemma4:31b-cloud",
-        "mistral-large-3:675b-cloud",
-        "nemotron-3-super:cloud",
-        "minimax-m2.5:cloud",
+        "glm-5.2:cloud",  # 1.5TB, best compliance / general chat (proven 100%)
+        "deepseek-v4-pro:cloud",  # 1.6TB, BEST for deep reasoning + reviews
+        "qwen3-coder:480b-cloud",  # 397B, BEST for code generation (Luau/Python)
+        "kimi-k2.7-code:cloud",  # 595B, code-specialist
+        "qwen3.5:397b-cloud",  # 397B, strong general + math
+        "kimi-k2.6:cloud",  # 595B, balanced
+        "deepseek-v4-flash:cloud",  # 140B, FAST with long context
+        "mistral-large-3:675b-cloud",  # 682B, strong European model
+        "gpt-oss:120b-cloud",  # 65B, OpenAI open + vision
+        "gemma4:31b-cloud",  # 62B, Google's small efficient
+        "nemotron-3-super:cloud",  # 230B, NVIDIA's strong reasoning
+        "minimax-m3:cloud",  # MiniMax M3, our default for ratman personas
     ]
     return OLLAMA_MODELS
 
