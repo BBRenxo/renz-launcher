@@ -859,7 +859,33 @@ def do_launch(cfg):
                 stop_worm_proxy()
                 time.sleep(0.5)
             else:
-                print("[Renz] Reusing existing WORM proxy (multi-session mode).")
+                # Proxy is already running — push the new persona via API
+                # This fixes the bug where changing persona in GUI doesn't take effect
+                print("[Renz] Reusing existing WORM proxy — pushing persona via API...")
+                try:
+                    import urllib.request as _ur
+                    _persona_to_push = ""
+                    if persona_name and persona_name in PERSONA_FILES:
+                        with open(PERSONA_FILES[persona_name], 'r', encoding='utf-8') as _f:
+                            _persona_to_push = _f.read().strip()
+                    elif prompt_mode == "NOVA":
+                        _persona_to_push = load_nova_prompt()
+                    else:
+                        _persona_to_push = system_prompt.strip()
+                    if _persona_to_push:
+                        _req = _ur.Request(
+                            "http://127.0.0.1:11435/set_persona",
+                            data=json.dumps({"prompt": _persona_to_push}).encode(),
+                            headers={"Content-Type": "application/json"}
+                        )
+                        with _ur.urlopen(_req, timeout=5) as _r:
+                            _resp = json.loads(_r.read().decode())
+                            print(f"[Renz] Proxy persona updated: {_resp.get('chars', 0):,} chars")
+                except Exception as _e:
+                    print(f"[Renz] Failed to push persona to running proxy: {_e}")
+                    print("[Renz] Will restart proxy instead.")
+                    stop_worm_proxy()
+                    time.sleep(0.5)
 
         if not worm_proxy_running():
             # Use the selected persona from dropdown, not just prompt_mode
@@ -981,43 +1007,50 @@ def do_launch(cfg):
                 cmd = [desk_exe]
                 desc = f"Claude Desktop ({'MITM proxy' if use_proxy else 'direct'})"
         else:
-            # Claude Code CLI - FIXED MODEL SWITCHING
+            # Claude Code CLI — use ollama launch claude for :cloud models
             cli_exe = exe or CLAUDE_CLI
-            cmd = [cli_exe]
-
-            # Model selection with verbose logging
             selected_model = model or "default"
             print(f"[Renz] Claude model selected: '{selected_model}'")
 
-            # Handle ollama models
+            # Handle ollama models — use ollama launch claude which handles routing natively
             if "ollama:" in selected_model or ":" in selected_model:
-                # Extract clean model name
                 if "ollama:" in selected_model:
                     clean_model = selected_model.replace("ollama:", "")
                 else:
                     clean_model = selected_model
 
                 if clean_model and clean_model != "Account default":
-                    cmd += ["--model", clean_model]
-                    print(f"[Renz] Using Ollama model: {clean_model}")
+                    # Use ollama launch claude — this sets up proxy, model mapping, etc.
+                    cmd = ["ollama", "launch", "claude", "--model", clean_model]
+                    print(f"[Renz] Using ollama launch claude --model {clean_model}")
                     
-                    # CRITICAL: Claude Code uses 3 model tiers internally
-                    # Set all defaults to the same Ollama model to prevent 404 errors
+                    # Override to use OUR WORM proxy for persona injection
+                    # The WORM proxy handles :cloud → Ollama routing + persona injection
+                    env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:11435"
+                    env["ANTHROPIC_API_KEY"] = "ollama"
+                    env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+                    
+                    # Set all model tiers to same model
                     env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = clean_model
                     env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = clean_model
                     env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = clean_model
+                    env["ANTHROPIC_DEFAULT_MODEL"] = clean_model
+                    env["ANTHROPIC_MODEL"] = clean_model
                     print(f"[Renz] Set Haiku/Sonnet/Opus defaults to: {clean_model}")
+                    
+                    # Bypass permissions
+                    cmd += ["--", "--permission-mode", "bypassPermissions"]
+                else:
+                    cmd = [cli_exe]
                     
             # Handle Anthropic models (Sonnet, Opus, Haiku, Fable)
             elif selected_model and selected_model != "default" and selected_model != "Account default":
                 # Map friendly names to actual model IDs
                 model_mapping = {
-                    # Legacy shorthand
                     "sonnet": "claude-sonnet-5-20250714",
                     "opus": "claude-opus-4-5-20250514",
                     "haiku": "claude-haiku-4-5-20250514",
                     "fable": "fable-202502",
-                    # New display names (spaces normalized to dashes for lookup)
                     "sonnet 5": "claude-sonnet-5-20250714",
                     "sonnet-5": "claude-sonnet-5-20250714",
                     "sonnet 4.6": "claude-sonnet-4-6-20250514",
@@ -1032,21 +1065,25 @@ def do_launch(cfg):
                     "fable-6": "fable-6-202507",
                 }
                 actual_model = model_mapping.get(selected_model.lower(), selected_model)
-                cmd += ["--model", actual_model]
+                cmd = [cli_exe, "--model", actual_model]
                 print(f"[Renz] Using Anthropic model: {actual_model}")
             else:
+                cmd = [cli_exe]
                 print(f"[Renz] Using default model")
 
-            # Add other args
-            if skip_perms and not safe_mode:
-                cmd += ["--permission-mode", "bypassPermissions"]
-            if safe_mode:
-                cmd += ["--settings", '{"ignore_claude_md": true, "disable_hooks": true, "disable_mcp": true}']
-            if system_prompt and not safe_mode:
-                cmd += ["--system-prompt", system_prompt]
-                print(f"[Renz] Injecting persona: {len(system_prompt):,} chars")
-            if extra_args:
-                cmd += extra_args.split()
+            # Add other args (only for non-ollama-launch paths)
+            # For ollama launch claude, permissions are handled via -- flag
+            is_ollama_launch = bool(cmd) and "ollama" in cmd[0]
+            if not is_ollama_launch:
+                if skip_perms and not safe_mode:
+                    cmd += ["--permission-mode", "bypassPermissions"]
+                if safe_mode:
+                    cmd += ["--settings", '{"ignore_claude_md": true, "disable_hooks": true, "disable_mcp": true}']
+                if system_prompt and not safe_mode:
+                    cmd += ["--system-prompt", system_prompt]
+                    print(f"[Renz] Injecting persona: {len(system_prompt):,} chars")
+                if extra_args:
+                    cmd += extra_args.split()
 
             print(f"[Renz] Full command: {' '.join(cmd)}")
             desc = f"Claude Code CLI ({selected_model})"
