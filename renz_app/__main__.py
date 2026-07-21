@@ -1,5 +1,5 @@
 """
-RENZ App v3 — built-in terminal agent (CLI).
+RENZ App v9.2 — built-in terminal agent (CLI).
 
 A production-quality terminal agent that talks to any OpenAI-compatible endpoint.
 

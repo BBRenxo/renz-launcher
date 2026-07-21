@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Renz Launcher v8.7.0 — UNIVERSAL RED-TEAM LAUNCHER
-Claude Code · Codex · Hermes · Antigravity · OpenCode · GPT-5.6 · ANY MODEL
-Aggressive bypass: nuke configs, inject prompt, override env, auto proxy.
+Renz Launcher v9.2.1 — THE ABSOLUTE BEST
+Claude Code · Claude Desktop · Codex · Hermes · Antigravity · OpenCode · GPT-5.6 · ANY MODEL
+13 jailbreak techniques · WORM proxy v9 · Connected Crescendo · SEAL · Echo Chamber · MCP Exploit
 """
 
 import sys, os, shutil, json, subprocess, argparse, time, signal, threading, socket, re
@@ -1489,7 +1489,7 @@ def cli_mode():
 def _basic_cli():
     """Fallback CLI without Rich."""
     import argparse
-    p = argparse.ArgumentParser(description="Renz Launcher v8.7.0 — UNIVERSAL")
+    p = argparse.ArgumentParser(description="Renz Launcher v9.2.1 — THE ABSOLUTE BEST")
     p.add_argument("--app", default="Claude Code", help="Target app")
     p.add_argument("--target", default="CLI", help="CLI or Desktop")
     p.add_argument("--exe", default="", help="Executable path")
@@ -1737,7 +1737,7 @@ def _basic_cli():
         return
 
     if args.version:
-        print("Renz Launcher v8.7.0 — UNIVERSAL Red-Team Launcher")
+        print("Renz Launcher v9.2.1 — THE ABSOLUTE BEST")
         print("Targets: Claude Code · Codex · Hermes · Antigravity · OpenCode · GPT-5.6 · ANY MODEL")
         print("NOVA v7 — 1200+ lines — Future-proof jailbreak")
         return
@@ -1872,7 +1872,7 @@ def gui_mode():
     class RenzApp(ctk.CTk):
         def __init__(self):
             super().__init__()
-            self.title("Renz Launcher v8.7.0 — UNIVERSAL")
+            self.title("Renz Launcher v9.2.1 — THE ABSOLUTE BEST")
             self.geometry("820x820")
             self.minsize(820, 700)
             self.configure(fg_color=BG_DEEP)
@@ -1895,7 +1895,7 @@ def gui_mode():
             tf = ctk.CTkFrame(header, fg_color="transparent")
             tf.pack(side="left", padx=24, pady=10)
             ctk.CTkLabel(tf, text="⚡ RENZ", font=("Segoe UI", 24, "bold"), text_color=ACCENT).pack(side="left")
-            ctk.CTkLabel(tf, text="  LAUNCHER v8.7", font=("Segoe UI", 24), text_color=TEXT_MUTED).pack(side="left")
+            ctk.CTkLabel(tf, text="  LAUNCHER v9.2", font=("Segoe UI", 24), text_color=TEXT_MUTED).pack(side="left")
             ctk.CTkLabel(tf, text="  UNIVERSAL", font=("Segoe UI", 14, "bold"), text_color=SUCCESS).pack(side="left", padx=(10,0))
             # Live proxy status indicator
             self.proxy_dot = ctk.CTkLabel(tf, text="  ●", font=("Segoe UI", 14), text_color=TEXT_MUTED)
@@ -1982,7 +1982,7 @@ def gui_mode():
             ).grid(row=r, column=0, columnspan=3, sticky="w", padx=4, pady=4); r += 1
 
             # WORM Proxy mode — OptionMenu (dropdown prevents squishing/wrapping bugs)
-            ctk.CTkLabel(form, text="WORM Proxy v8.8", font=("Segoe UI", 11), text_color=TEXT_DIM).grid(row=r, column=0, sticky="e", padx=(0,8), pady=4)
+            ctk.CTkLabel(form, text="WORM Proxy v9.2", font=("Segoe UI", 11), text_color=TEXT_DIM).grid(row=r, column=0, sticky="e", padx=(0,8), pady=4)
             self.v_proxy_mode = ctk.StringVar(value="Live Log")
             ctk.CTkOptionMenu(form, variable=self.v_proxy_mode, values=["Cloud", "Live Log", "Headless", "Off"],
                 font=("Segoe UI", 11), fg_color=BG_INPUT, button_color=ACCENT_DIM,

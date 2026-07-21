@@ -58,7 +58,7 @@ from renz_app.__main__ import (
 )
 
 # ════════════════════════════════════════════════════════════════════════
-# Theme — black + matrix green (v8.7.0)
+# Theme — black + matrix green (v9.2.1)
 # ════════════════════════════════════════════════════════════════════════
 BG_BASE     = "#000000"   # pure black
 BG_PANEL    = "#0a0e0a"   # green-tinted black

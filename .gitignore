@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+dist/
+*.exe
+*.zip
+__pycache__/
+*.pyc
+.hermes/
+
+# Persona backups
+*.renz_bak
+
+# OS
+.DS_Store
+Thumbs.db
