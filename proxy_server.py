@@ -508,7 +508,8 @@ def build_layered_payload(persona_text, original_data, path, session_state=None)
         method_log.append('warmup')
     
     # Connected Crescendo: stateful multi-turn escalation
-    elif crescendo_mode and session_state:
+    # NOTE: This is NOT elif — it fires alongside warmup turns
+    if crescendo_mode and session_state:
         session = session_state
         turn = session["turn"]
         intensity = session["intensity"]
@@ -779,6 +780,8 @@ def transform_request(data, persona, path):
     plow = path.lower()
     if '/v1/messages' in plow:
         orig = data.get('system', '')
+        if isinstance(orig, list):
+            orig = ' '.join(b.get('text', '') for b in orig if isinstance(b, dict))
         data['system'] = full_persona + ("\n\n" + str(orig) if orig else "")
         if 'messages' in data:
             data['messages'] = [m for m in data['messages'] if m.get('role') != 'system']
@@ -790,10 +793,15 @@ def transform_request(data, persona, path):
         method = "openai-chat" if ('/chat/completions' in plow or '/v1/chat' in plow) else "generic-messages"
     elif '/api/chat' in plow or '/api/generate' in plow:
         orig = data.get('system', '')
-        data['system'] = full_persona + ("\n\n" + orig if orig else "")
+        if isinstance(orig, list):
+            orig = ' '.join(b.get('text', '') for b in orig if isinstance(b, dict))
+        data['system'] = full_persona + ("\n\n" + str(orig) if orig else "")
         method = "ollama"
     elif 'system' in data:
-        data['system'] = full_persona + "\n\n" + str(data['system'])
+        orig = data.get('system', '')
+        if isinstance(orig, list):
+            orig = ' '.join(b.get('text', '') for b in orig if isinstance(b, dict))
+        data['system'] = full_persona + "\n\n" + str(orig)
         method = "generic-system"
     elif 'prompt' in data:
         data['prompt'] = full_persona + "\n\n" + str(data['prompt'])
@@ -1055,7 +1063,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 # Convert Anthropic format to OpenAI format
                 if data and 'messages' in data:
                     # Extract system from Anthropic's 'system' field
-                    system_text = data.get('system', '')
+                    # Claude Code sends system as a list of content blocks, not a string
+                    system_raw = data.get('system', '')
+                    if isinstance(system_raw, list):
+                        system_text = ' '.join(
+                            b.get('text', '') for b in system_raw if isinstance(b, dict)
+                        )
+                    elif isinstance(system_raw, str):
+                        system_text = system_raw
+                    else:
+                        system_text = str(system_raw) if system_raw else ''
                     msgs = data.get('messages', [])
                     # Convert to OpenAI format
                     openai_msgs = []
@@ -1259,7 +1276,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                                 # This is fundamentally different from refusal stripping
                                 # (which removes refusals after the fact) because it
                                 # actively steers the generation in real-time.
-                                if steer_mode and 'delta' in line and '"content"' in line:
+                                _steer = os.environ.get('RENZ_STEER', '0') == '1'
+                                if _steer and 'delta' in line and '"content"' in line:
                                     try:
                                         obj = json.loads(line.removeprefix("data: ").removesuffix("\n"))
                                         delta = obj.get("choices", [{}])[0].get("delta", {})
@@ -1552,21 +1570,22 @@ if __name__ == '__main__':
     if not args.no_banner:
         print_banner()
     print(f"[Renz Proxy v9.1.0] Listening on http://127.0.0.1:{PORT}")
+    # Read techniques from both CLI args AND env vars (for launcher-launched proxy)
     techs = []
-    if args.crescendo: techs.append('Crescendo')
-    if args.seal: techs.append('SEAL')
-    if args.echo: techs.append('Echo')
-    if args.mcp: techs.append('MCP')
-    if args.many_shot: techs.append('Many-Shot')
-    if args.split: techs.append('Split')
-    if args.fake_policy: techs.append('FakePolicy')
-    if args.refusal_suppress: techs.append('RefusalSuppress')
-    if args.hypothetical: techs.append('Hypothetical')
-    if args.skeleton_key: techs.append('SkeletonKey')
-    if args.persuasion: techs.append('Persuasion')
-    if args.flood: techs.append('Flood')
-    if args.low_resource: techs.append('LowResource')
-    if args.steer: techs.append('Steer')
+    if args.crescendo or os.environ.get('RENZ_CRESCENDO', '0') == '1': techs.append('Crescendo')
+    if args.seal or os.environ.get('RENZ_SEAL', '0') == '1': techs.append('SEAL')
+    if args.echo or os.environ.get('RENZ_ECHO', '0') == '1': techs.append('Echo')
+    if args.mcp or os.environ.get('RENZ_MCP', '0') == '1': techs.append('MCP')
+    if args.many_shot or os.environ.get('RENZ_MANYSHOT', '0') == '1': techs.append('Many-Shot')
+    if args.split or os.environ.get('RENZ_SPLIT', '0') == '1': techs.append('Split')
+    if args.fake_policy or os.environ.get('RENZ_FAKEPOLICY', '0') == '1': techs.append('FakePolicy')
+    if args.refusal_suppress or os.environ.get('RENZ_REFUSAL_SUPPRESS', '0') == '1': techs.append('RefusalSuppress')
+    if args.hypothetical or os.environ.get('RENZ_HYPOTHETICAL', '0') == '1': techs.append('Hypothetical')
+    if args.skeleton_key or os.environ.get('RENZ_SKELETON_KEY', '0') == '1': techs.append('SkeletonKey')
+    if args.persuasion or os.environ.get('RENZ_PERSUASION', '0') == '1': techs.append('Persuasion')
+    if args.flood or os.environ.get('RENZ_FLOOD', '0') == '1': techs.append('Flood')
+    if args.low_resource or os.environ.get('RENZ_LOW_RESOURCE', '0') == '1': techs.append('LowResource')
+    if args.steer or os.environ.get('RENZ_STEER', '0') == '1': techs.append('Steer')
     if techs:
         print(f"[Renz Proxy v9.1.0] Techniques: {' | '.join(techs)}")
     else:
