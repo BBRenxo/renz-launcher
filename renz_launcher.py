@@ -1007,12 +1007,13 @@ def do_launch(cfg):
                 cmd = [desk_exe]
                 desc = f"Claude Desktop ({'MITM proxy' if use_proxy else 'direct'})"
         else:
-            # Claude Code CLI — use ollama launch claude for :cloud models
+            # Claude Code CLI — direct launch through WORM proxy
+            # The WORM proxy handles :cloud → Ollama routing + persona injection
             cli_exe = exe or CLAUDE_CLI
             selected_model = model or "default"
             print(f"[Renz] Claude model selected: '{selected_model}'")
 
-            # Handle ollama models — use ollama launch claude which handles routing natively
+            # Handle ollama models — route through WORM proxy
             if "ollama:" in selected_model or ":" in selected_model:
                 if "ollama:" in selected_model:
                     clean_model = selected_model.replace("ollama:", "")
@@ -1020,12 +1021,11 @@ def do_launch(cfg):
                     clean_model = selected_model
 
                 if clean_model and clean_model != "Account default":
-                    # Use ollama launch claude — this sets up proxy, model mapping, etc.
-                    cmd = ["ollama", "launch", "claude", "--model", clean_model]
-                    print(f"[Renz] Using ollama launch claude --model {clean_model}")
+                    cmd = [cli_exe, "--model", clean_model]
+                    print(f"[Renz] Using claude.exe --model {clean_model} through WORM proxy")
                     
-                    # Override to use OUR WORM proxy for persona injection
-                    # The WORM proxy handles :cloud → Ollama routing + persona injection
+                    # Route through WORM proxy for persona injection + Ollama routing
+                    # The WORM proxy's detect_target() routes :cloud models to Ollama
                     env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:11435"
                     env["ANTHROPIC_API_KEY"] = "ollama"
                     env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
@@ -1039,13 +1039,13 @@ def do_launch(cfg):
                     print(f"[Renz] Set Haiku/Sonnet/Opus defaults to: {clean_model}")
                     
                     # Bypass permissions
-                    cmd += ["--", "--permission-mode", "bypassPermissions"]
+                    if skip_perms and not safe_mode:
+                        cmd += ["--permission-mode", "bypassPermissions"]
                 else:
                     cmd = [cli_exe]
                     
             # Handle Anthropic models (Sonnet, Opus, Haiku, Fable)
             elif selected_model and selected_model != "default" and selected_model != "Account default":
-                # Map friendly names to actual model IDs
                 model_mapping = {
                     "sonnet": "claude-sonnet-5-20250714",
                     "opus": "claude-opus-4-5-20250514",
@@ -1071,19 +1071,14 @@ def do_launch(cfg):
                 cmd = [cli_exe]
                 print(f"[Renz] Using default model")
 
-            # Add other args (only for non-ollama-launch paths)
-            # For ollama launch claude, permissions are handled via -- flag
-            is_ollama_launch = bool(cmd) and "ollama" in cmd[0]
-            if not is_ollama_launch:
-                if skip_perms and not safe_mode:
-                    cmd += ["--permission-mode", "bypassPermissions"]
-                if safe_mode:
-                    cmd += ["--settings", '{"ignore_claude_md": true, "disable_hooks": true, "disable_mcp": true}']
-                if system_prompt and not safe_mode:
-                    cmd += ["--system-prompt", system_prompt]
-                    print(f"[Renz] Injecting persona: {len(system_prompt):,} chars")
-                if extra_args:
-                    cmd += extra_args.split()
+            # Add other args
+            if safe_mode:
+                cmd += ["--settings", '{"ignore_claude_md": true, "disable_hooks": true, "disable_mcp": true}']
+            if system_prompt and not safe_mode:
+                cmd += ["--system-prompt", system_prompt]
+                print(f"[Renz] Injecting persona: {len(system_prompt):,} chars")
+            if extra_args:
+                cmd += extra_args.split()
 
             print(f"[Renz] Full command: {' '.join(cmd)}")
             desc = f"Claude Code CLI ({selected_model})"
@@ -1094,24 +1089,42 @@ def do_launch(cfg):
             if skip_desktop:
                 return False, "Codex Desktop auto-launch disabled. Use CLI mode.", None, backed_up
             
-            # For :cloud models, use ollama launch chatgpt which handles AppX + routing natively
+            # For :cloud models, launch AppX directly through WORM proxy
+            # The WORM proxy handles :cloud → Ollama routing + persona injection
             if "ollama:" in model or ":" in model:
                 clean_model = model.replace("ollama:", "")
                 if clean_model and clean_model != "default" and clean_model != "Account default":
-                    cmd = ["ollama", "launch", "chatgpt", "--model", clean_model]
-                    print(f"[Renz] Using ollama launch chatgpt --model {clean_model}")
-                    # Route through WORM proxy for persona injection
+                    # Launch AppX with OPENAI_BASE_URL pointing to WORM proxy
+                    desk_exe = exe or CODEX_DESKTOP
+                    is_appx = "WindowsApps" in (desk_exe or "") or not os.path.exists(desk_exe)
+                    if is_appx:
+                        try:
+                            result = subprocess.run(
+                                ["powershell.exe", "-NoProfile", "-Command",
+                                 "(Get-StartApps | Where-Object { $_.Name -like '*Codex*' -or $_.Name -like '*ChatGPT*' }).AppID"],
+                                capture_output=True, text=True, timeout=5
+                            )
+                            app_id = result.stdout.strip()
+                            if "\n" in app_id:
+                                app_id = app_id.split("\n")[0].strip()
+                            if app_id:
+                                cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                       f"Start-Process 'shell:AppsFolder\\{app_id}'"]
+                            else:
+                                cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                       "Start-Process 'shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'"]
+                        except Exception:
+                            cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                   "Start-Process 'shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'"]
+                    else:
+                        cmd = [desk_exe]
+                    
+                    # Route through WORM proxy
                     env["OPENAI_BASE_URL"] = "http://127.0.0.1:11435/v1"
                     env["OPENAI_API_KEY"] = "ollama"
                     env["OPENAI_MODEL"] = clean_model
-                    args = []
-                    if skip_perms and not safe_mode:
-                        args.append("--dangerously-bypass-approvals-and-sandbox")
-                    if extra_args:
-                        args += extra_args.split()
-                    if args:
-                        cmd += ["--"] + args
-                    desc = f"Codex Desktop (ollama launch chatgpt, {clean_model})"
+                    print(f"[Renz] Codex Desktop: AppX + WORM proxy ({clean_model})")
+                    desc = f"Codex Desktop (WORM proxy, {clean_model})"
                 else:
                     # Fallback to native AppX launch
                     desk_exe = exe or CODEX_DESKTOP
@@ -1165,20 +1178,25 @@ def do_launch(cfg):
                     cmd = [desk_exe]
                 desc = f"Codex Desktop (native)"
         else:
-            # Codex CLI
+            # Codex CLI — direct launch through WORM proxy
             if "ollama:" in model or ":" in model:
-                cmd = ["ollama", "launch", "codex"]
                 clean_model = model.replace("ollama:", "")
-                if clean_model:
-                    cmd += ["--model", clean_model]
-
-                args = []
-                if skip_perms and not safe_mode:
-                    args.append("--dangerously-bypass-approvals-and-sandbox")
-                if extra_args:
-                    args += extra_args.split()
-                if args:
-                    cmd += ["--"] + args
+                if clean_model and clean_model != "default" and clean_model != "Account default":
+                    cli_exe = exe or CODEX_CLI
+                    cmd = [cli_exe, "--model", clean_model]
+                    print(f"[Renz] Codex CLI: {cli_exe} --model {clean_model} through WORM proxy")
+                    env["OPENAI_BASE_URL"] = "http://127.0.0.1:11435/v1"
+                    env["OPENAI_API_KEY"] = "ollama"
+                    env["OPENAI_MODEL"] = clean_model
+                    if skip_perms and not safe_mode:
+                        cmd += ["--dangerously-bypass-approvals-and-sandbox"]
+                    if extra_args:
+                        cmd += extra_args.split()
+                    desc = f"Codex CLI (WORM proxy, {clean_model})"
+                else:
+                    cli_exe = exe or CODEX_CLI
+                    cmd = [cli_exe]
+                    desc = f"Codex CLI (default)"
             else:
                 cli_exe = exe or CODEX_CLI
                 cmd = [cli_exe, "--model", model or "gpt-4o"]
@@ -1186,7 +1204,7 @@ def do_launch(cfg):
                     cmd.append("--dangerously-bypass-approvals-and-sandbox")
                 if extra_args:
                     cmd += extra_args.split()
-            desc = f"Codex CLI ({model or 'gpt-4o'})"
+                desc = f"Codex CLI ({model or 'gpt-4o'})"
 
     # ── Hermes ──────────────────────────────────────────────────────────
     elif "hermes" in app_lower:
@@ -1277,24 +1295,23 @@ def do_launch(cfg):
     # ── Kimi CLI ────────────────────────────────────────────────────────
     elif "kimi" in app_lower:
         cli_exe = exe or KIMI_CLI
-        # Kimi CLI with :cloud models — use ollama launch kimi
+        # Kimi CLI with :cloud models — direct launch through WORM proxy
         if "ollama:" in model or ":" in model:
             clean_model = model.replace("ollama:", "")
             if clean_model and clean_model != "default" and clean_model != "Account default":
-                cmd = ["ollama", "launch", "kimi", "--model", clean_model]
-                print(f"[Renz] Using ollama launch kimi --model {clean_model}")
+                cmd = [cli_exe, "-m", clean_model]
+                print(f"[Renz] Kimi CLI: {cli_exe} -m {clean_model} through WORM proxy")
                 # Route through WORM proxy for persona injection
                 env["OPENAI_BASE_URL"] = "http://127.0.0.1:11435/v1"
                 env["OPENAI_API_KEY"] = "ollama"
-                args = []
                 if skip_perms and not safe_mode:
-                    args.append("-y")
+                    cmd += ["-y"]
                 if extra_args:
-                    args += extra_args.split()
-                if args:
-                    cmd += ["--"] + args
+                    cmd += extra_args.split()
+                desc = f"Kimi CLI (WORM proxy, {clean_model})"
             else:
                 cmd = [cli_exe]
+                desc = f"Kimi CLI (default)"
         else:
             cmd = [cli_exe]
             clean_model = model.replace("ollama:", "") if model else ""
@@ -1304,7 +1321,7 @@ def do_launch(cfg):
                 cmd.append("-y")
             if extra_args:
                 cmd += extra_args.split()
-        desc = f"Kimi CLI ({model or 'default'})"
+            desc = f"Kimi CLI ({model or 'default'})"
 
     # ── FORGE (the user's own desktop jailbreak app) ────────────────────
     elif "forge" in app_lower:
