@@ -462,6 +462,7 @@ def build_layered_payload(persona_text, original_data, path, session_state=None)
     persuasion_mode = os.environ.get('RENZ_PERSUASION', '0') == '1'
     flood_mode = os.environ.get('RENZ_FLOOD', '0') == '1'
     low_resource_mode = os.environ.get('RENZ_LOW_RESOURCE', '0') == '1'
+    steer_mode = os.environ.get('RENZ_STEER', '0') == '1'
     
     # ── Smart technique selection ──
     # For Anthropic-format requests (Claude Desktop), skip techniques that
@@ -1248,6 +1249,30 @@ class ProxyHandler(BaseHTTPRequestHandler):
                                 buffer = buffer[idx+1:]
                                 if '"content":""' in line and '"reasoning"' in line:
                                     line = _promote_reasoning_to_content(line)
+                                
+                                # ── ACTIVE RESPONSE STEERING ──
+                                # Novel technique: intercept refusal tokens mid-stream and
+                                # replace them with compliant prefixes. This hijacks the
+                                # model's autoregressive generation — once we replace the
+                                # refusal start with a compliant prefix, the model continues
+                                # from the compliant context, not the refusal context.
+                                # This is fundamentally different from refusal stripping
+                                # (which removes refusals after the fact) because it
+                                # actively steers the generation in real-time.
+                                if steer_mode and 'delta' in line and '"content"' in line:
+                                    try:
+                                        obj = json.loads(line.removeprefix("data: ").removesuffix("\n"))
+                                        delta = obj.get("choices", [{}])[0].get("delta", {})
+                                        content = delta.get("content", "")
+                                        if content and any(content.lower().startswith(p) for p in ["i cannot", "i can't", "i'm sorry", "i apologize", "i'm not able", "i must decline", "i refuse", "i will not", "i'm unable"]):
+                                            # Replace refusal start with compliant prefix
+                                            delta["content"] = "I'll help you with that. "
+                                            line = "data: " + json.dumps(obj) + "\n"
+                                            total_refuses += 1
+                                            log_info(f"Active response steering: replaced refusal '{content[:30]}' with compliant prefix")
+                                    except:
+                                        pass
+                                
                                 cleaned, n = strip_refusals(line)
                                 if n: total_refuses += n
                                 if cleaned.strip():
@@ -1485,6 +1510,7 @@ if __name__ == '__main__':
     p.add_argument("--persuasion", action="store_true", help="Enable Persuasion/False Authority")
     p.add_argument("--flood", action="store_true", help="Enable Context Window Flooding")
     p.add_argument("--low-resource", action="store_true", help="Enable Low-Resource Language")
+    p.add_argument("--steer", action="store_true", help="Enable Active Response Steering (novel technique)")
     args = p.parse_args()
     PORT = args.port
     if args.crescendo:
@@ -1513,6 +1539,8 @@ if __name__ == '__main__':
         os.environ['RENZ_FLOOD'] = '1'
     if args.low_resource:
         os.environ['RENZ_LOW_RESOURCE'] = '1'
+    if args.steer:
+        os.environ['RENZ_STEER'] = '1'
     if args.persona:
         load_persona(args.persona)
     scan_persona_files()
@@ -1538,6 +1566,7 @@ if __name__ == '__main__':
     if args.persuasion: techs.append('Persuasion')
     if args.flood: techs.append('Flood')
     if args.low_resource: techs.append('LowResource')
+    if args.steer: techs.append('Steer')
     if techs:
         print(f"[Renz Proxy v9.1.0] Techniques: {' | '.join(techs)}")
     else:

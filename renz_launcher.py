@@ -569,7 +569,7 @@ def inject_hermes_persona(prompt):
 #  WORM PROXY — auto-launch for Ollama routing — ENHANCED FOR ALL MODELS
 # ══════════════════════════════════════════════════════════════════════════
 
-def launch_worm_proxy(disable_thinking=False, persona_name="", persona_prompt="", headless=False, crescendo=False, seal=False, echo=False, mcp=False, many_shot=False, split=False, fake_policy=False, refusal_suppress=False, hypothetical=False, skeleton_key=False, persuasion=False, flood=False, low_resource=False):
+def launch_worm_proxy(disable_thinking=False, persona_name="", persona_prompt="", headless=False, crescendo=False, seal=False, echo=False, mcp=False, many_shot=False, split=False, fake_policy=False, refusal_suppress=False, hypothetical=False, skeleton_key=False, persuasion=False, flood=False, low_resource=False, steer=False):
     """Start the WORM proxy server v9. headless=True = no CMD window (silent). False = live traffic log window."""
     if not PROXY_PATH.exists():
         print("[Renz] ERROR: proxy_server.py not found!")
@@ -599,6 +599,7 @@ def launch_worm_proxy(disable_thinking=False, persona_name="", persona_prompt=""
     env["RENZ_PERSUASION"] = "1" if persuasion else "0"
     env["RENZ_FLOOD"] = "1" if flood else "0"
     env["RENZ_LOW_RESOURCE"] = "1" if low_resource else "0"
+    env["RENZ_STEER"] = "1" if steer else "0"
     env["RENZ_HEADLESS"] = "1" if headless else "0"
     env["RENZ_VERBOSE"] = "0" if headless else "1"
 
@@ -781,6 +782,7 @@ def do_launch(cfg):
     persuasion = cfg.get("persuasion", False)
     flood = cfg.get("flood", False)
     low_resource = cfg.get("low_resource", False)
+    steer = cfg.get("steer", False)
 
     # Resolve prompt
     system_prompt = ""
@@ -867,20 +869,20 @@ def do_launch(cfg):
                 try:
                     with open(PERSONA_FILES[persona_name], 'r', encoding='utf-8') as f:
                         selected_persona_content = f.read().strip()
-                    proxy_proc = launch_worm_proxy(disable_thinking, persona_name, selected_persona_content, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource)
+                    proxy_proc = launch_worm_proxy(disable_thinking, persona_name, selected_persona_content, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource, steer=steer)
                     print(f"[Renz] Proxy launched with persona: {persona_name} ({len(selected_persona_content):,} chars)")
                 except Exception as e:
                     print(f"[Renz] Failed to load persona {persona_name}: {e}")
                     # Fallback to NOVA
                     nova_content = load_nova_prompt()
-                    proxy_proc = launch_worm_proxy(disable_thinking, "NOVA.txt", nova_content, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource)
+                    proxy_proc = launch_worm_proxy(disable_thinking, "NOVA.txt", nova_content, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource, steer=steer)
             elif prompt_mode == "NOVA":
                 nova_content = load_nova_prompt()
-                proxy_proc = launch_worm_proxy(disable_thinking, "NOVA.txt", nova_content, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource)
+                proxy_proc = launch_worm_proxy(disable_thinking, "NOVA.txt", nova_content, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource, steer=steer)
                 print(f"[Renz] Proxy launched with NOVA ({len(nova_content):,} chars)")
             else:
                 # Custom prompt from text box
-                proxy_proc = launch_worm_proxy(disable_thinking, "Custom", system_prompt, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource)
+                proxy_proc = launch_worm_proxy(disable_thinking, "Custom", system_prompt, headless=proxy_headless, crescendo=crescendo, seal=seal, echo=echo, mcp=mcp, many_shot=many_shot, split=split, fake_policy=fake_policy, refusal_suppress=refusal_suppress, hypothetical=hypothetical, skeleton_key=skeleton_key, persuasion=persuasion, flood=flood, low_resource=low_resource, steer=steer)
                 print(f"[Renz] Proxy launched with custom prompt ({len(system_prompt):,} chars)")
 
     # ── BUILD ENV ────────────────────────────────────────────────────────
@@ -2073,6 +2075,12 @@ def gui_mode():
                 font=("Segoe UI", 10), fg_color="#1e8449", hover_color="#27ae60", border_color=BORDER, text_color=TEXT_DIM, corner_radius=4
             ).grid(row=r, column=2, sticky="w", padx=4, pady=2); r += 1
 
+            # Row 4: Steer (novel technique)
+            self.v_steer = ctk.BooleanVar(value=False)
+            ctk.CTkCheckBox(form, text="Steer (Active Response Steering)", variable=self.v_steer,
+                font=("Segoe UI", 10), fg_color="#d35400", hover_color="#e67e22", border_color=BORDER, text_color=TEXT_DIM, corner_radius=4
+            ).grid(row=r, column=0, columnspan=3, sticky="w", padx=4, pady=2); r += 1
+
             self.v_skip_desktop = ctk.BooleanVar(value=False)  # FIXED: Default to LAUNCH desktop (user expects it)
             ctk.CTkCheckBox(form, text="Skip Desktop auto-launch (uncheck to actually launch Codex/Claude/Hermes Desktop)", variable=self.v_skip_desktop,
                 font=("Segoe UI", 11), fg_color=WARNING, hover_color="#e09530", border_color=BORDER, text_color=TEXT_DIM, corner_radius=4
@@ -2345,6 +2353,7 @@ def gui_mode():
                 "persuasion": self.v_persuasion.get(),
                 "flood": self.v_flood.get(),
                 "low_resource": self.v_low_resource.get(),
+                "steer": self.v_steer.get(),
                 "cloud_url": self.v_cloud_url.get(),
                 "extra_args": self.v_extra.get(),
             }
@@ -2377,6 +2386,7 @@ def gui_mode():
             self.v_persuasion.set(d.get("persuasion", False))
             self.v_flood.set(d.get("flood", False))
             self.v_low_resource.set(d.get("low_resource", False))
+            self.v_steer.set(d.get("steer", False))
             self.v_cloud_url.set(d.get("cloud_url", "https://renz-worm-proxy.stanfordlorenzo80.workers.dev").rstrip("/").replace("/v1", ""))
             self.v_safe.set(d.get("safe_mode", False))
             self.v_skip_desktop.set(d.get("skip_desktop", False))

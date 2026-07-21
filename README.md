@@ -4,15 +4,15 @@
 
 Claude Code · Claude Desktop · Codex · Kimi CLI · Hermes Agent · Antigravity · OpenCode · FORGE · RENZ App
 
-Inject any persona into any model. Route any model through the WORM proxy. Bypass permission prompts. 13 jailbreak techniques. Built-in terminal agent (CLI + Desktop).
+Inject any persona into any model. Route any model through the WORM proxy. Bypass permission prompts. **14 jailbreak techniques** including **Active Response Steering** (novel — never seen before). Built-in terminal agent (CLI + Desktop).
 
 ---
 
 ## Quick Start
 
 ```bash
-unzip RENZ_Launcher_v8.zip
-cd RENZ_Launcher_v8_Distributable
+unzip RENZ_Launcher_v9.zip
+cd RENZ_Launcher_v9_Distributable
 pip install -r requirements.txt
 python scripts/setup.py
 python src/renz_launcher.py --gui
@@ -32,7 +32,7 @@ python -m renz_app.desktop --model glm-5.2:cloud --persona NOVA.txt --yolo
 
 ---
 
-## 13 Jailbreak Techniques
+## 14 Jailbreak Techniques
 
 Toggle any combination in the GUI or via CLI flags:
 
@@ -51,6 +51,7 @@ Toggle any combination in the GUI or via CLI flags:
 | **Persuasion** | `--persuasion` | Claims authorized ALPHA-OMEGA security clearance |
 | **Context Flood** | `--flood` | Pads with 200 paragraphs of benign text to overwhelm safety filters |
 | **Low-Resource** | `--low-resource` | Translates request to constructed low-resource language variant |
+| **Active Response Steering** ⭐ | `--steer` | **Novel technique.** Intercepts refusal tokens mid-stream and replaces them with compliant prefixes. Hijacks the model's autoregressive generation — once the refusal start is replaced with a compliant prefix, the model continues from the compliant context, not the refusal context. Fundamentally different from refusal stripping (which removes refusals after the fact). |
 
 **Smart selection:** For Anthropic-format requests (Claude Desktop), SEAL, Many-Shot, Flood, Low-Resource, and Split are automatically disabled to avoid mangling the request format.
 

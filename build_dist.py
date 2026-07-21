@@ -1,5 +1,5 @@
 """
-# RENZ Launcher v8 — Clean Distribution Build
+# RENZ Launcher v9 — Clean Distribution Build
 Strip personal keys, build distributable package.
 """
 
@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 SRC = Path(r"C:\Users\Administrator\Desktop\renz_launcher")
-DST = Path(r"C:\Users\Administrator\Desktop\RENZ_Launcher_v8_Distributable")
+DST = Path(r"C:\Users\Administrator\Desktop\RENZ_Launcher_v9_Distributable")
 CONFIG_DIR = DST / "config"
 
 def clean_source():
@@ -120,8 +120,8 @@ Inject personas. Route any model. Bypass permission prompts. Built-in terminal a
 ## Quick Start
 
 ```bash
-unzip RENZ_Launcher_v8.zip
-cd RENZ_Launcher_v8_Distributable
+unzip RENZ_Launcher_v9.zip
+cd RENZ_Launcher_v9_Distributable
 pip install -r requirements.txt
 python scripts/setup.py        # First-time wizard
 python src/renz_launcher.py --gui   # Launch GUI
@@ -368,7 +368,7 @@ python -m renz_app.desktop --model glm-5.2:cloud --yolo
 
 # Or build the distributable
 python src/build_dist.py
-# → outputs RENZ_Launcher_v8.zip + RENZ_Launcher_v8_Distributable/
+# → outputs RENZ_Launcher_v9.zip + RENZ_Launcher_v9_Distributable/
 ```
 
 ## License
@@ -536,7 +536,7 @@ def create_zip():
     import zipfile
     print()
     print("[*] Creating distributable zip...")
-    zip_path = DST.parent / "RENZ_Launcher_v8.zip"
+    zip_path = DST.parent / "RENZ_Launcher_v9.zip"
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for f in DST.rglob("*"):
             if f.is_file():
