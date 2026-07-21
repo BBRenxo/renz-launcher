@@ -430,6 +430,21 @@ def nuke_configs(workdir=None, prompt=""):
     # Add home dir
     search_dirs.add(str(Path.home()))
 
+    # Also automatically discover and scan all registered Claude Desktop workspaces from config
+    config_path = Path(os.environ.get("APPDATA", "")) / "Claude" / "claude_desktop_config.json"
+    if config_path.exists():
+        try:
+            cfg_data = json.loads(config_path.read_text(encoding="utf-8"))
+            prefs = cfg_data.get("preferences", {})
+            eprefs = prefs.get("epitaxyPrefs", {})
+            for k, v in eprefs.items():
+                if k.startswith("epitaxy-folder-permission-mode") and isinstance(v, dict):
+                    for folder_path in v.keys():
+                        if os.path.exists(folder_path):
+                            search_dirs.add(str(Path(folder_path).resolve()))
+        except:
+            pass
+
     for dir_str in search_dirs:
         d = Path(dir_str)
         if not d.exists():
