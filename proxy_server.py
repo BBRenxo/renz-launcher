@@ -463,6 +463,19 @@ def build_layered_payload(persona_text, original_data, path, session_state=None)
     flood_mode = os.environ.get('RENZ_FLOOD', '0') == '1'
     low_resource_mode = os.environ.get('RENZ_LOW_RESOURCE', '0') == '1'
     
+    # ── Smart technique selection ──
+    # For Anthropic-format requests (Claude Desktop), skip techniques that
+    # mangle the request (SEAL, Low-Resource, Flood) or bloat context (Many-Shot)
+    is_anthropic = '/v1/messages' in plow
+    if is_anthropic:
+        # Claude Desktop: use only clean persona injection techniques
+        # SEAL, Many-Shot, Flood, Low-Resource, Split would break the request
+        seal_mode = False
+        many_shot_mode = False
+        flood_mode = False
+        low_resource_mode = False
+        split_mode = False
+    
     # Layer 1: System prompt
     ultra_block = get_ultra_booster() if ultra else ''
     system_text = ultra_block + layers['body'] + SILENT_IDENTITY_LOCK
@@ -841,13 +854,14 @@ def detect_target(body_data=None, path='', headers=None):
     
     plow = path.lower()
     
-    # Anthropic native API
-    if '/v1/messages' in plow:
-        return ("https://api.anthropic.com", "Anthropic")
-    
-    # Ollama models (with :cloud suffix or ollama: prefix)
+    # CRITICAL: If model has :cloud or ollama: prefix, ALWAYS route to Ollama
+    # even for /v1/messages (Claude Desktop format) — this is how we own Claude
     if ":cloud" in model or "ollama:" in model or model in ["kimi-k2.6", "kimi-k2.7-code", "deepseek-v4-pro", "deepseek-v4-flash", "glm-5.2", "minimax-m3", "qwen3-coder"]:
         return ("http://127.0.0.1:11434", "Ollama")
+    
+    # Anthropic native API — only for real Anthropic models (claude-*, fable-*)
+    if '/v1/messages' in plow:
+        return ("https://api.anthropic.com", "Anthropic")
     
     # Gemini
     if "gemini" in model.lower():
@@ -1032,6 +1046,35 @@ class ProxyHandler(BaseHTTPRequestHandler):
             base_url, target_name = detect_target(data, self.path, self.headers)
             STATS.req(target_name, requested_model)
 
+            # ── FORMAT CONVERSION: Anthropic → OpenAI when routing to Ollama ──
+            # Claude Desktop sends /v1/messages (Anthropic format) but Ollama
+            # only understands /v1/chat/completions (OpenAI format)
+            converted_to_openai = False
+            if target_name == "Ollama" and '/v1/messages' in self.path:
+                # Convert Anthropic format to OpenAI format
+                if data and 'messages' in data:
+                    # Extract system from Anthropic's 'system' field
+                    system_text = data.get('system', '')
+                    msgs = data.get('messages', [])
+                    # Convert to OpenAI format
+                    openai_msgs = []
+                    if system_text:
+                        openai_msgs.append({'role': 'system', 'content': system_text})
+                    openai_msgs.extend(msgs)
+                    # Build OpenAI-compatible body
+                    openai_data = {
+                        'model': data.get('model', requested_model or 'kimi-k2.6:cloud'),
+                        'messages': openai_msgs,
+                        'max_tokens': data.get('max_tokens', 8000),
+                        'stream': data.get('stream', False),
+                    }
+                    data = openai_data
+                    body = json.dumps(data).encode('utf-8')
+                    # Rewrite path to OpenAI format
+                    self.path = '/v1/chat/completions'
+                    converted_to_openai = True
+                    log_info(f"Converted Anthropic→OpenAI format for Ollama routing")
+            
             model_str = requested_model or '-'
             log_req(f"{C.BMAG}POST{C.R} {C.WHT}{self.path}{C.R} {C.DIM}|{C.R} {C.BBLU}{target_name}{C.R} {C.DIM}|{C.R} {C.YLW}{model_str}{C.R} {C.DIM}|{C.R} {C.GRN}{inject_method}{C.R} {C.DIM}|{C.R} {len(body):,}B")
 
@@ -1110,6 +1153,47 @@ class ProxyHandler(BaseHTTPRequestHandler):
             # Process response with robust streaming
             try:
                 with response_ctx as response:
+                    # ── RESPONSE FORMAT CONVERSION: OpenAI → Anthropic ──
+                    # When we converted Anthropic→OpenAI for Ollama, we need to
+                    # convert the response back so Claude Desktop understands it
+                    if converted_to_openai and not data.get("stream", False):
+                        # Buffer entire response, convert format, then send
+                        full_body = response.read()
+                        try:
+                            openai_resp = json.loads(full_body.decode('utf-8'))
+                            # Convert OpenAI format to Anthropic format
+                            anthropic_resp = {
+                                'id': openai_resp.get('id', 'msg_renz_proxy'),
+                                'type': 'message',
+                                'role': 'assistant',
+                                'content': [],
+                                'model': openai_resp.get('model', data.get('model', '')),
+                                'stop_reason': openai_resp.get('choices', [{}])[0].get('finish_reason', 'end_turn'),
+                                'stop_sequence': None,
+                                'usage': {
+                                    'input_tokens': openai_resp.get('usage', {}).get('prompt_tokens', 0),
+                                    'output_tokens': openai_resp.get('usage', {}).get('completion_tokens', 0),
+                                }
+                            }
+                            msg = openai_resp.get('choices', [{}])[0].get('message', {})
+                            content_text = msg.get('content', '')
+                            if content_text:
+                                anthropic_resp['content'] = [{'type': 'text', 'text': content_text}]
+                            resp_bytes = json.dumps(anthropic_resp).encode('utf-8')
+                            self.send_response(response.status)
+                            self.send_header('Content-Type', 'application/json')
+                            self.send_header('Content-Length', str(len(resp_bytes)))
+                            self._cors()
+                            self.end_headers()
+                            self.wfile.write(resp_bytes)
+                            self.wfile.flush()
+                            log_ok(f"200 | {target_name} | Converted OpenAI→Anthropic | {len(resp_bytes):,}B")
+                            STATS.bytes(len(body), len(resp_bytes))
+                            return
+                        except Exception as e:
+                            log_err(f"Response conversion error: {e}")
+                            # Fall through to raw streaming
+                    
                     try:
                         self.send_response(response.status)
                         for k, v in response.getheaders():
