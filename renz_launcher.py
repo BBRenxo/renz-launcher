@@ -1026,16 +1026,18 @@ def do_launch(cfg):
                     try:
                         result = subprocess.run(
                             ["powershell.exe", "-NoProfile", "-Command",
-                             "(Get-StartApps | Where-Object { $_.Name -like '*Codex*' }).AppID"],
+                             "(Get-StartApps | Where-Object { $_.Name -like '*Codex*' -or $_.Name -like '*ChatGPT*' }).AppID"],
                             capture_output=True, text=True, timeout=5
                         )
                         app_id = result.stdout.strip()
+                        if "\n" in app_id:
+                            app_id = app_id.split("\n")[0].strip()
                         if app_id:
                             cmd = ["explorer.exe", f"shell:AppsFolder\\{app_id}"]
                         else:
-                            cmd = ["explorer.exe", "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!Codex"]
+                            cmd = ["explorer.exe", "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App"]
                     except Exception:
-                        cmd = ["explorer.exe", "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!Codex"]
+                        cmd = ["explorer.exe", "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App"]
                 else:
                     cmd = [desk_exe]
 
