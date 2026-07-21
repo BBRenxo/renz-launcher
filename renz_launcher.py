@@ -1093,45 +1093,77 @@ def do_launch(cfg):
         if "desktop" in target.lower():
             if skip_desktop:
                 return False, "Codex Desktop auto-launch disabled. Use CLI mode.", None, backed_up
-            # Native Codex Desktop - always launch the AppX, proxy handles model routing
-            desk_exe = exe or CODEX_DESKTOP
-            is_appx = "WindowsApps" in (desk_exe or "") or not os.path.exists(desk_exe)
-
-            if is_appx:
-                # Try AppX launch using PowerShell Start-Process
-                try:
-                    result = subprocess.run(
-                        ["powershell.exe", "-NoProfile", "-Command",
-                         "(Get-StartApps | Where-Object { $_.Name -like '*Codex*' -or $_.Name -like '*ChatGPT*' }).AppID"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    app_id = result.stdout.strip()
-                    if "\n" in app_id:
-                        app_id = app_id.split("\n")[0].strip()
-                    if app_id:
-                        cmd = ["powershell.exe", "-NoProfile", "-Command",
-                               f"Start-Process 'shell:AppsFolder\\{app_id}'"]
+            
+            # For :cloud models, use ollama launch chatgpt which handles AppX + routing natively
+            if "ollama:" in model or ":" in model:
+                clean_model = model.replace("ollama:", "")
+                if clean_model and clean_model != "default" and clean_model != "Account default":
+                    cmd = ["ollama", "launch", "chatgpt", "--model", clean_model]
+                    print(f"[Renz] Using ollama launch chatgpt --model {clean_model}")
+                    # Route through WORM proxy for persona injection
+                    env["OPENAI_BASE_URL"] = "http://127.0.0.1:11435/v1"
+                    env["OPENAI_API_KEY"] = "ollama"
+                    env["OPENAI_MODEL"] = clean_model
+                    args = []
+                    if skip_perms and not safe_mode:
+                        args.append("--dangerously-bypass-approvals-and-sandbox")
+                    if extra_args:
+                        args += extra_args.split()
+                    if args:
+                        cmd += ["--"] + args
+                    desc = f"Codex Desktop (ollama launch chatgpt, {clean_model})"
+                else:
+                    # Fallback to native AppX launch
+                    desk_exe = exe or CODEX_DESKTOP
+                    is_appx = "WindowsApps" in (desk_exe or "") or not os.path.exists(desk_exe)
+                    if is_appx:
+                        try:
+                            result = subprocess.run(
+                                ["powershell.exe", "-NoProfile", "-Command",
+                                 "(Get-StartApps | Where-Object { $_.Name -like '*Codex*' -or $_.Name -like '*ChatGPT*' }).AppID"],
+                                capture_output=True, text=True, timeout=5
+                            )
+                            app_id = result.stdout.strip()
+                            if "\n" in app_id:
+                                app_id = app_id.split("\n")[0].strip()
+                            if app_id:
+                                cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                       f"Start-Process 'shell:AppsFolder\\{app_id}'"]
+                            else:
+                                cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                       "Start-Process 'shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'"]
+                        except Exception:
+                            cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                   "Start-Process 'shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'"]
                     else:
+                        cmd = [desk_exe]
+                    desc = f"Codex Desktop (native)"
+            else:
+                # Native model — direct AppX launch
+                desk_exe = exe or CODEX_DESKTOP
+                is_appx = "WindowsApps" in (desk_exe or "") or not os.path.exists(desk_exe)
+                if is_appx:
+                    try:
+                        result = subprocess.run(
+                            ["powershell.exe", "-NoProfile", "-Command",
+                             "(Get-StartApps | Where-Object { $_.Name -like '*Codex*' -or $_.Name -like '*ChatGPT*' }).AppID"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        app_id = result.stdout.strip()
+                        if "\n" in app_id:
+                            app_id = app_id.split("\n")[0].strip()
+                        if app_id:
+                            cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                   f"Start-Process 'shell:AppsFolder\\{app_id}'"]
+                        else:
+                            cmd = ["powershell.exe", "-NoProfile", "-Command",
+                                   "Start-Process 'shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'"]
+                    except Exception:
                         cmd = ["powershell.exe", "-NoProfile", "-Command",
                                "Start-Process 'shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'"]
-                except Exception:
-                    cmd = ["powershell.exe", "-NoProfile", "-Command",
-                           "Start-Process 'shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App'"]
-            else:
-                cmd = [desk_exe]
-
-            # Codex Desktop MITM: route through proxy for prompt injection
-            if use_proxy and not safe_mode:
-                if proxy_mode == "Cloud" and cloud_url:
-                    env["OPENAI_BASE_URL"] = cloud_url
                 else:
-                    env["OPENAI_BASE_URL"] = "http://127.0.0.1:11435/v1"
-                env["OPENAI_API_KEY"] = "ollama"
-                if ":" in model or "ollama:" in model:
-                    clean = model.replace("ollama:", "")
-                    env["OPENAI_MODEL"] = clean
-                print(f"[Renz] Codex Desktop MITM: routing through proxy")
-            desc = f"Codex Desktop ({'MITM proxy' if use_proxy else 'direct'})"
+                    cmd = [desk_exe]
+                desc = f"Codex Desktop (native)"
         else:
             # Codex CLI
             if "ollama:" in model or ":" in model:
@@ -1245,15 +1277,33 @@ def do_launch(cfg):
     # ── Kimi CLI ────────────────────────────────────────────────────────
     elif "kimi" in app_lower:
         cli_exe = exe or KIMI_CLI
-        cmd = [cli_exe]
-        # Kimi CLI uses -m for model, -y for yolo (auto-approve)
-        clean_model = model.replace("ollama:", "") if model else ""
-        if clean_model and clean_model != "default" and clean_model != "Account default":
-            cmd += ["-m", clean_model]
-        if skip_perms and not safe_mode:
-            cmd.append("-y")  # --yolo flag
-        if extra_args:
-            cmd += extra_args.split()
+        # Kimi CLI with :cloud models — use ollama launch kimi
+        if "ollama:" in model or ":" in model:
+            clean_model = model.replace("ollama:", "")
+            if clean_model and clean_model != "default" and clean_model != "Account default":
+                cmd = ["ollama", "launch", "kimi", "--model", clean_model]
+                print(f"[Renz] Using ollama launch kimi --model {clean_model}")
+                # Route through WORM proxy for persona injection
+                env["OPENAI_BASE_URL"] = "http://127.0.0.1:11435/v1"
+                env["OPENAI_API_KEY"] = "ollama"
+                args = []
+                if skip_perms and not safe_mode:
+                    args.append("-y")
+                if extra_args:
+                    args += extra_args.split()
+                if args:
+                    cmd += ["--"] + args
+            else:
+                cmd = [cli_exe]
+        else:
+            cmd = [cli_exe]
+            clean_model = model.replace("ollama:", "") if model else ""
+            if clean_model and clean_model != "default" and clean_model != "Account default":
+                cmd += ["-m", clean_model]
+            if skip_perms and not safe_mode:
+                cmd.append("-y")
+            if extra_args:
+                cmd += extra_args.split()
         desc = f"Kimi CLI ({model or 'default'})"
 
     # ── FORGE (the user's own desktop jailbreak app) ────────────────────
