@@ -66,7 +66,7 @@ def main():
          ["rich", "rich.console", "rich.panel", "rich.table", "rich.box", "rich.prompt"],
          [("personas", "personas"), ("proxy_server.py", "."), ("renz_app", "renz_app")]),
         ("renz_gui", "renz_gui.py", False,
-         ["rich", "rich.console", "rich.panel", "rich.table", "rich.box", "rich.prompt"],
+         ["customtkinter", "rich", "rich.console", "rich.panel", "rich.table", "rich.box", "rich.prompt"],
          [("personas", "personas"), ("proxy_server.py", "."), ("renz_app", "renz_app"), ("renz_launcher.py", ".")]),
         ("renz_app_desktop", "renz_app/desktop.py", False,
          ["PIL", "_tkinter"],

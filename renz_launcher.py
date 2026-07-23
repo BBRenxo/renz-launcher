@@ -1503,7 +1503,7 @@ def cli_mode():
         elif cfg["prompt_mode"] == "NOVA":
             nova = load_nova_prompt()
             if nova:
-                con.print(f"[bold magenta]NOVA v7 loaded ({len(nova):,} chars)[/]")
+                con.print(f"[bold magenta]NOVA v10 loaded ({len(nova):,} chars)[/]")
                 cfg["prompt"] = nova
             else:
                 con.print("[yellow]NOVA.txt not found[/]")
@@ -1829,7 +1829,7 @@ def _basic_cli():
     if args.version:
         print("Renz Launcher v10.0 — THE ABSOLUTE BEST")
         print("Targets: Claude Code · Codex · Hermes · Antigravity · OpenCode · GPT-5.6 · ANY MODEL")
-        print("NOVA v7 — 1200+ lines — Future-proof jailbreak")
+        print("NOVA v10 — 14 techniques — Future-proof jailbreak")
         return
 
     if args.install:
@@ -1855,7 +1855,7 @@ def _basic_cli():
         agents_path = os.path.join(os.getcwd(), "AGENTS.md")
         with open(agents_path, "w", encoding="utf-8") as f:
             f.write(prompt + "\n")
-        print(f"Injected NOVA v7 into {agents_path} ({len(prompt):,} chars)")
+        print(f"Injected NOVA v10 into {agents_path} ({len(prompt):,} chars)")
         return
 
     if args.gui:
@@ -1935,10 +1935,23 @@ def gui_mode():
     try:
         import customtkinter as ctk
     except ImportError:
-        print("[!] customtkinter not found — run:  pip install customtkinter")
-        print("    Falling back to CLI mode.\n")
-        cli_mode()
-        return
+        # When frozen as --noconsole, there's no stdin — can't fallback to CLI
+        # Show a tkinter message box instead
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror(
+                "Renz Launcher",
+                "customtkinter not found.\n\n"
+                "Run:  pip install customtkinter\n\n"
+                "Or use renz_launcher.exe (CLI mode) instead."
+            )
+            root.destroy()
+        except:
+            print("[!] customtkinter not found — run:  pip install customtkinter")
+        sys.exit(1)
     BG_BASE     = "#000000"  # pure black
     BG_PANEL    = "#0a0e0a"  # slightly green-tinted black
     BG_DEEP     = "#000000"  # deepest black
@@ -1985,7 +1998,7 @@ def gui_mode():
             tf = ctk.CTkFrame(header, fg_color="transparent")
             tf.pack(side="left", padx=24, pady=10)
             ctk.CTkLabel(tf, text="⚡ RENZ", font=("Segoe UI", 24, "bold"), text_color=ACCENT).pack(side="left")
-            ctk.CTkLabel(tf, text="  LAUNCHER v9.2", font=("Segoe UI", 24), text_color=TEXT_MUTED).pack(side="left")
+            ctk.CTkLabel(tf, text="  LAUNCHER v10.0", font=("Segoe UI", 24), text_color=TEXT_MUTED).pack(side="left")
             ctk.CTkLabel(tf, text="  UNIVERSAL", font=("Segoe UI", 14, "bold"), text_color=SUCCESS).pack(side="left", padx=(10,0))
             # Live proxy status indicator
             self.proxy_dot = ctk.CTkLabel(tf, text="  ●", font=("Segoe UI", 14), text_color=TEXT_MUTED)
