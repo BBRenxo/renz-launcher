@@ -9,10 +9,17 @@ import sys, os
 if "--gui" not in sys.argv:
     sys.argv.insert(1, "--gui")
 
-# Run the main launcher
-launcher = os.path.join(os.path.dirname(__file__), "renz_launcher.py")
-if os.path.exists(launcher):
-    exec(open(launcher).read())
+# Find renz_launcher.py — works both frozen (sys._MEIPASS) and source
+if hasattr(sys, '_MEIPASS'):
+    base = sys._MEIPASS
 else:
-    # Running as frozen exe — import directly
-    import renz_launcher
+    base = os.path.dirname(os.path.abspath(__file__))
+
+launcher_path = os.path.join(base, "renz_launcher.py")
+if os.path.exists(launcher_path):
+    with open(launcher_path, "r", encoding="utf-8") as f:
+        code = f.read()
+    exec(code)
+else:
+    print(f"ERROR: renz_launcher.py not found at {launcher_path}")
+    sys.exit(1)
